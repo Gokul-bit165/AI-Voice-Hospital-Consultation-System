@@ -1,0 +1,272 @@
+import base64
+import os
+from typing import List, Optional
+from datetime import datetime
+from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import FileResponse
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.future import select
+from sqlalchemy.orm import selectinload
+from pydantic import BaseModel
+
+from backend.app.core.deps import get_db_session, require_doctor, require_any_role
+from backend.app.core.config import settings
+from backend.app.models.models import Visit, Patient, Doctor, Prescription, Timeline, Embedding
+from backend.app.schemas.schemas import PrescriptionResponse, MedicineSchema
+from backend.app.services.prescription import prescription_service
+from backend.app.services.voice import voice_service
+from backend.app.services.rag import rag_service
+from backend.app.api.v1.endpoints.patients import log_audit_action
+
+router = APIRouter()
+
+class PrescriptionCreateRequest(BaseModel):
+    medicines: Optional[List[MedicineSchema]] = None
+    audio_base64: Optional[str] = None # For dictating prescription via voice
+
+@router.post("/visits/{visit_id}/prescription", response_model=PrescriptionResponse)
+async def create_prescription(
+    visit_id: str,
+    req: PrescriptionCreateRequest,
+    db: AsyncSession = Depends(get_db_session),
+    current_user: Doctor = Depends(require_doctor)
+):
+    # Fetch visit
+    result = await db.execute(
+        select(Visit)
+        .filter(Visit.id == visit_id)
+        .options(selectinload(Visit.prescription))
+    )
+    visit = result.scalars().first()
+    if not visit:
+        raise HTTPException(status_code=404, detail="Visit not found")
+
+    # Fetch patient details
+    p_result = await db.execute(select(Patient).filter(Patient.id == visit.patient_id))
+    patient = p_result.scalars().first()
+    
+    # Calculate age
+    today = datetime.today()
+    age = today.year - patient.date_of_birth.year - ((today.month, today.day) < (patient.date_of_birth.month, patient.date_of_birth.day))
+
+    patient_data = {
+        "full_name": patient.full_name,
+        "age": age,
+        "gender": patient.gender,
+        "phone": patient.phone,
+        "blood_group": patient.blood_group,
+        "allergies": patient.allergies
+    }
+
+    # Fetch doctor details
+    d_result = await db.execute(select(Doctor).filter(Doctor.id == visit.doctor_id))
+    doctor = d_result.scalars().first()
+    doctor_data = {
+        "full_name": doctor.full_name,
+        "specialization": doctor.specialization,
+        "license_number": doctor.license_number,
+        "phone": doctor.phone
+    }
+
+    medicines_list = []
+    
+    if req.audio_base64:
+        # Dictated prescription parsing
+        try:
+            audio_bytes = base64.b64decode(req.audio_base64)
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid base64 audio data")
+            
+        transcript = voice_service.transcribe_audio(audio_bytes, file_format="wav")
+        if not transcript:
+            raise HTTPException(status_code=400, detail="Could not transcribe dictation audio")
+            
+        extracted_meds = prescription_service.parse_dictation(transcript)
+        medicines_list = [med.model_dump() for med in extracted_meds]
+    elif req.medicines is not None:
+        # Direct schema input
+        medicines_list = [med.model_dump() for med in req.medicines]
+    else:
+        raise HTTPException(status_code=400, detail="Must provide either medicines list or audio dictation")
+
+    # Generate Prescription PDF
+    pdf_rel_path = prescription_service.generate_prescription_pdf(
+        patient_id=visit.patient_id,
+        visit_id=visit.id,
+        patient_data=patient_data,
+        doctor_data=doctor_data,
+        medicines=medicines_list,
+        visit_date=visit.visit_date.strftime("%Y-%m-%d")
+    )
+
+    db_prescription = visit.prescription
+    if db_prescription:
+        # Update existing
+        db_prescription.medicines = medicines_list
+        db_prescription.pdf_path = pdf_rel_path
+        db_prescription.qr_code_data = str(visit.id)
+    else:
+        # Create new
+        db_prescription = Prescription(
+            visit_id=visit.id,
+            patient_id=visit.patient_id,
+            pdf_path=pdf_rel_path,
+            qr_code_data=str(visit.id)
+        )
+        db_prescription.medicines = medicines_list
+        db.add(db_prescription)
+        await db.flush()
+
+    # Index prescription details in ChromaDB
+    meds_text = "\n".join([
+        f"- {m.get('name')} {m.get('strength') or ''}: {m.get('frequency')} for {m.get('duration')} ({m.get('instructions') or ''})"
+        for m in medicines_list
+    ])
+    prescription_chunk = (
+        f"Prescription Date: {visit.visit_date.strftime('%Y-%m-%d')}\n"
+        f"Prescribed Medications:\n{meds_text}"
+    )
+
+    doc_id = f"prescription_{db_prescription.id}"
+    meta = {
+        "source_type": "prescription",
+        "source_id": db_prescription.id,
+        "patient_id": visit.patient_id,
+        "created_at": datetime.now().isoformat()
+    }
+
+    # Save relational embedding reference
+    db_emb = Embedding(
+        patient_id=visit.patient_id,
+        source_type="prescription",
+        source_id=db_prescription.id,
+        chroma_collection_name=rag_service._get_collection_name(visit.patient_id),
+        chroma_document_id=doc_id
+    )
+    db_emb.chunk_text = prescription_chunk
+    db.add(db_emb)
+
+    # Add to ChromaDB
+    rag_service.add_patient_documents(
+        patient_id=visit.patient_id,
+        texts=[prescription_chunk],
+        metadatas=[meta],
+        document_ids=[doc_id]
+    )
+
+    # Timeline entry
+    med_names = ", ".join([m.get("name") for m in medicines_list[:3]])
+    summary = f"Prescription generated. Meds: {med_names}."
+    timeline_evt = Timeline(
+        patient_id=visit.patient_id,
+        event_type="prescription",
+        event_summary=summary,
+        reference_id=db_prescription.id,
+        event_date=datetime.now()
+    )
+    db.add(timeline_evt)
+
+    # Audit log
+    await log_audit_action(db, current_user.email, "CREATE", "Prescription", db_prescription.id)
+    await db.commit()
+
+    return db_prescription
+
+@router.put("/prescriptions/{id}", response_model=PrescriptionResponse)
+async def update_prescription(
+    id: str,
+    prescription_in: List[MedicineSchema],
+    db: AsyncSession = Depends(get_db_session),
+    current_user: Doctor = Depends(require_doctor)
+):
+    result = await db.execute(
+        select(Prescription)
+        .filter(Prescription.id == id)
+        .options(selectinload(Prescription.visit))
+    )
+    prescription = result.scalars().first()
+    if not prescription:
+        raise HTTPException(status_code=404, detail="Prescription not found")
+
+    visit = prescription.visit
+    
+    # Fetch patient details
+    p_result = await db.execute(select(Patient).filter(Patient.id == visit.patient_id))
+    patient = p_result.scalars().first()
+    today = datetime.today()
+    age = today.year - patient.date_of_birth.year - ((today.month, today.day) < (patient.date_of_birth.month, patient.date_of_birth.day))
+    
+    patient_data = {
+        "full_name": patient.full_name,
+        "age": age,
+        "gender": patient.gender,
+        "phone": patient.phone,
+        "blood_group": patient.blood_group,
+        "allergies": patient.allergies
+    }
+
+    # Fetch doctor details
+    d_result = await db.execute(select(Doctor).filter(Doctor.id == visit.doctor_id))
+    doctor = d_result.scalars().first()
+    doctor_data = {
+        "full_name": doctor.full_name,
+        "specialization": doctor.specialization,
+        "license_number": doctor.license_number,
+        "phone": doctor.phone
+    }
+
+    medicines_list = [med.model_dump() for med in prescription_in]
+
+    # Re-generate PDF
+    pdf_rel_path = prescription_service.generate_prescription_pdf(
+        patient_id=visit.patient_id,
+        visit_id=visit.id,
+        patient_data=patient_data,
+        doctor_data=doctor_data,
+        medicines=medicines_list,
+        visit_date=visit.visit_date.strftime("%Y-%m-%d")
+    )
+
+    prescription.medicines = medicines_list
+    prescription.pdf_path = pdf_rel_path
+
+    await log_audit_action(db, current_user.email, "UPDATE", "Prescription", id)
+    await db.commit()
+    return prescription
+
+@router.get("/prescriptions/{id}/pdf")
+async def get_prescription_pdf(
+    id: str,
+    db: AsyncSession = Depends(get_db_session),
+    current_user: Doctor = Depends(require_any_role)
+):
+    result = await db.execute(select(Prescription).filter(Prescription.id == id))
+    prescription = result.scalars().first()
+    if not prescription or not prescription.pdf_path:
+        raise HTTPException(status_code=404, detail="Prescription PDF not found")
+
+    pdf_full_path = os.path.join(settings.STORAGE_DIR, prescription.pdf_path)
+    if not os.path.exists(pdf_full_path):
+        raise HTTPException(status_code=404, detail="Prescription PDF file does not exist on storage")
+
+    return FileResponse(
+        pdf_full_path, 
+        media_type="application/pdf", 
+        filename=f"prescription_{prescription.visit_id}.pdf"
+    )
+
+@router.post("/prescriptions/{id}/print")
+async def print_prescription(
+    id: str,
+    db: AsyncSession = Depends(get_db_session),
+    current_user: Doctor = Depends(require_any_role)
+):
+    # Retrieve PDF details
+    result = await db.execute(select(Prescription).filter(Prescription.id == id))
+    prescription = result.scalars().first()
+    if not prescription:
+        raise HTTPException(status_code=404, detail="Prescription not found")
+
+    # In a full hospital layout, this would route to a local network thermal or laser printer.
+    # For this working prototype, we simulate sending a print job and return confirmation.
+    return {"detail": f"Simulated: Print job for prescription ID '{id}' successfully sent to hospital clinic printer desk."}
