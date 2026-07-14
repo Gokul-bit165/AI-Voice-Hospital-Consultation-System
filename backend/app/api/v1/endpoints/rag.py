@@ -69,11 +69,30 @@ async def query_patient_rag(
     """
     Queries only the patient-isolated RAG collection. Combines it with live visit history.
     """
+    # Retrieve Patient demographics and allergies from SQL database
+    p_result = await db.execute(select(Patient).filter(Patient.id == id))
+    patient = p_result.scalars().first()
+    if not patient:
+        raise HTTPException(status_code=404, detail="Patient not found")
+
     # 1. Retrieve RAG Context (from Chroma)
     retrieved_chunks = rag_service.query_patient_documents(patient_id=id, query=req.question, n_results=4)
     
-    rag_context_list = []
+    # Pre-populate context with core Patient demographics and decrypted allergies
+    patient_allergies = ", ".join(patient.allergies) if patient.allergies else "None reported"
+    patient_profile = (
+        f"[CORE PATIENT PROFILE & ALLERGIES]:\n"
+        f"- Patient Name: {patient.full_name}\n"
+        f"- DOB: {patient.date_of_birth}\n"
+        f"- Gender: {patient.gender}\n"
+        f"- Phone: {patient.phone}\n"
+        f"- Blood Group: {patient.blood_group or 'Unknown'}\n"
+        f"- Declared Allergies: {patient_allergies}\n"
+    )
+    
+    rag_context_list = [patient_profile]
     cited_chunks = []
+    
     for chunk in retrieved_chunks:
         doc_text = chunk["document"]
         source_type = chunk["metadata"].get("source_type", "record")
@@ -83,7 +102,7 @@ async def query_patient_rag(
         rag_context_list.append(f"{source_label}: {doc_text}")
         cited_chunks.append(doc_text)
         
-    rag_context = "\n\n".join(rag_context_list) if rag_context_list else "No historical records found for this patient."
+    rag_context = "\n\n".join(rag_context_list)
 
     # 2. Retrieve Live Context (from current Visit Conversation)
     live_transcript = "No active visit transcription."
@@ -103,10 +122,10 @@ async def query_patient_rag(
 
     # 3. Compile prompt and run LLM
     template = load_prompt_template("patient_rag_answer.txt")
-    prompt = template.format(
-        rag_context=rag_context,
-        live_transcript=live_transcript,
-        question=req.question
+    prompt = (
+        template.replace("{rag_context}", rag_context)
+        .replace("{live_transcript}", live_transcript)
+        .replace("{question}", req.question)
     )
 
     system_instruction = (

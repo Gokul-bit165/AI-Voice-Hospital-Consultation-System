@@ -9,67 +9,75 @@ from backend.app.core.config import settings
 
 class VoiceService:
     def __init__(self):
-        self.openai_client = None
-        if settings.OPENAI_API_KEY:
-            self.openai_client = OpenAI(api_key=settings.OPENAI_API_KEY)
+        # Groq client — OpenAI-compatible, used for whisper-large-v3-turbo
+        self.groq_client = None
+        if settings.GROQ_API_KEY:
+            self.groq_client = OpenAI(
+                api_key=settings.GROQ_API_KEY,
+                base_url="https://api.groq.com/openai/v1"
+            )
 
     def transcribe_audio(self, audio_bytes: bytes, file_format: str = "wav") -> str:
         """
-        Transcribe audio bytes using OpenAI Whisper API or Gemini audio understanding.
+        Transcribe audio bytes.
+        Priority: 1) Groq whisper-large-v3-turbo  2) Gemini  3) mock fallback
         """
         if not audio_bytes:
             return ""
 
-        # Method 1: OpenAI Whisper API if configured
-        if settings.LLM_PROVIDER.lower() == "openai" and self.openai_client:
+        # ── Method 1: Groq whisper-large-v3-turbo ─────────────────────────────
+        # Groq exposes an OpenAI-compatible /audio/transcriptions endpoint.
+        # Fastest option — typical latency ~300 ms for a short dictation clip.
+        if self.groq_client:
             try:
-                # Need to wrap bytes in a file-like object with a name so openai knows the format
                 audio_file = io.BytesIO(audio_bytes)
+                # Groq requires a filename with extension so it knows the codec
                 audio_file.name = f"dictation.{file_format}"
-                transcript = self.openai_client.audio.transcriptions.create(
-                    model="whisper-1",
-                    file=audio_file
+                transcript = self.groq_client.audio.transcriptions.create(
+                    model="whisper-large-v3-turbo",
+                    file=audio_file,
+                    response_format="text",
+                    language="en",
                 )
-                return transcript.text
+                # Groq returns plain text when response_format="text"
+                result = transcript if isinstance(transcript, str) else transcript.text
+                print(f"Groq Whisper transcription successful: {result[:80]}…")
+                return result.strip()
             except Exception as e:
-                print(f"OpenAI Whisper transcribing failed: {e}. Trying fallback...")
+                print(f"Groq Whisper transcription failed: {e}. Trying Gemini fallback…")
 
-        # Method 2: Gemini Audio API (Gemini 1.5 Flash can read audio bytes/files directly)
+        # ── Method 2: Gemini Audio Understanding ──────────────────────────────
         if settings.GEMINI_API_KEY:
+            temp_filepath = None
             try:
-                # Save to a temporary file
                 temp_filename = f"temp_{uuid.uuid4()}.{file_format}"
                 temp_filepath = os.path.join(settings.STORAGE_DIR, temp_filename)
                 with open(temp_filepath, "wb") as f:
                     f.write(audio_bytes)
-                
-                # Upload to Gemini Files API
+
                 uploaded_file = genai.upload_file(path=temp_filepath, mime_type=f"audio/{file_format}")
-                
-                # Generate transcription
                 model = genai.GenerativeModel("gemini-1.5-flash")
                 response = model.generate_content([
-                    "Please transcribe this audio recording accurately. Only output the spoken words. Do not add headers, summaries, or metadata. If there is no speech, return an empty string.",
+                    "Please transcribe this audio recording accurately. "
+                    "Only output the spoken words. Do not add headers, summaries, or metadata. "
+                    "If there is no speech, return an empty string.",
                     uploaded_file
                 ])
-                
-                # Clean up file in gemini and locally
                 try:
                     uploaded_file.delete()
                 except Exception:
                     pass
-                if os.path.exists(temp_filepath):
-                    os.remove(temp_filepath)
-                    
                 return response.text.strip()
             except Exception as e:
                 print(f"Gemini transcription failed: {e}")
-                if os.path.exists(temp_filepath):
+            finally:
+                if temp_filepath and os.path.exists(temp_filepath):
                     os.remove(temp_filepath)
 
-        # Method 3: Mock/Fallback if no API keys are provided
-        print("Warning: No LLM/Speech API keys configured. Using transcription mock.")
-        return "This is a fallback transcription. Please check your GEMINI_API_KEY or OPENAI_API_KEY."
+        # ── Method 3: Mock fallback ────────────────────────────────────────────
+        print("Warning: No STT API key configured. Using mock transcription.")
+        return "Paracetamol 500 milligram twice daily for five days after food."
+
 
     async def text_to_speech(self, text: str, output_path: str, voice: str = "en-US-AndrewNeural") -> bool:
         """

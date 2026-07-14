@@ -7,7 +7,7 @@ from backend.app.core.deps import get_db_session, get_current_user
 from backend.app.core.security import verify_password, create_access_token, create_refresh_token, decode_token
 from backend.app.core.config import settings
 from backend.app.models.models import Doctor
-from backend.app.schemas.schemas import Token, LoginRequest, UserCreate, Doctor as DoctorSchema # wait, we didn't define DoctorSchema, but we can write a simple schema or just returns dict
+from backend.app.schemas.schemas import Token, LoginRequest, UserCreate
 from pydantic import BaseModel
 
 router = APIRouter()

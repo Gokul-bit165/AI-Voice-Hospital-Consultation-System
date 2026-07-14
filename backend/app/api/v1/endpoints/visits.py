@@ -30,7 +30,7 @@ async def start_visit(
         raise HTTPException(status_code=404, detail="Patient not found")
 
     # Check if there's already an active visit for this patient
-    stmt = select(Visit).filter(Visit.patient_id == patient_id, Visit.status == "in_progress")
+    stmt = select(Visit).filter(Visit.patient_id == patient_id, Visit.status == "in_progress").options(selectinload(Visit.prescription))
     existing_visit = (await db.execute(stmt)).scalars().first()
     if existing_visit:
         # Return existing visit instead of throwing error to make workflow robust
@@ -43,6 +43,8 @@ async def start_visit(
         chief_complaint=visit_in.chief_complaint,
         status="in_progress"
     )
+    # Explicitly set prescription to None to prevent lazy loading validation error
+    db_visit.prescription = None
     # Initialize empty SOAP and Vitals
     db_visit.soap_notes = {"subjective": "", "objective": "", "assessment": "", "plan": ""}
     db_visit.vitals = {"bp": "", "hr": "", "temp": "", "weight": "", "spo2": ""}
@@ -84,7 +86,7 @@ async def update_visit(
     db: AsyncSession = Depends(get_db_session),
     current_user: Doctor = Depends(require_doctor)
 ):
-    result = await db.execute(select(Visit).filter(Visit.id == id))
+    result = await db.execute(select(Visit).filter(Visit.id == id).options(selectinload(Visit.prescription)))
     visit = result.scalars().first()
     if not visit:
         raise HTTPException(status_code=404, detail="Visit not found")
@@ -113,7 +115,7 @@ async def scribe_visit_transcript(
     passes it to the Medical Scribe agent, extracts SOAP notes, and updates the Visit.
     """
     # Fetch visit
-    result = await db.execute(select(Visit).filter(Visit.id == id))
+    result = await db.execute(select(Visit).filter(Visit.id == id).options(selectinload(Visit.prescription)))
     visit = result.scalars().first()
     if not visit:
         raise HTTPException(status_code=404, detail="Visit not found")

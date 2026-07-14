@@ -51,11 +51,11 @@ export default function PrescriptionPreviewPage({ params: paramsPromise }: { par
         {/* Navigation row */}
         <div className="flex items-center justify-between">
           <button
-            onClick={() => window.location.href = `/patient/${patientId}/consultation`}
+            onClick={() => window.location.href = `/patient/${patientId}`}
             className="inline-flex items-center gap-1.5 text-slate-500 hover:text-slate-900 text-xs font-bold uppercase tracking-wider cursor-pointer"
           >
             <ArrowLeft className="h-4 w-4" />
-            <span>Consultation room</span>
+            <span>Patient Profile</span>
           </button>
           
           {pdfUrl && (

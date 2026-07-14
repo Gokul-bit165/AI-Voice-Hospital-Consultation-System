@@ -26,6 +26,9 @@ class Settings(BaseSettings):
     LLM_PROVIDER: str = Field(default="gemini")
     OPENAI_API_KEY: Optional[str] = Field(default=None)
     GEMINI_API_KEY: Optional[str] = Field(default=None)
+    # Groq — for whisper-large-v3-turbo STT via OpenAI-compatible endpoint
+    GROQ_API_KEY: Optional[str] = Field(default=None)
+
     
     # Storage
     STORAGE_DIR: str = Field(default="c:/Users/gokul/hospital-voiceAI/storage")
@@ -37,7 +40,11 @@ class Settings(BaseSettings):
     # CORS
     BACKEND_CORS_ORIGINS: List[str] = ["http://localhost:3000", "http://127.0.0.1:3000"]
     
-    model_config = SettingsConfigDict(env_file=".env", case_sensitive=True, extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), ".env"),
+        case_sensitive=True,
+        extra="ignore"
+    )
 
 settings = Settings()
 

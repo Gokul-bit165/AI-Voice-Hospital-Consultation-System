@@ -135,11 +135,12 @@ class VisitUpdate(BaseModel):
 # Medicines & Prescription
 class MedicineSchema(BaseModel):
     name: str
-    strength: str # e.g. "500mg"
-    frequency: str # e.g. "Once daily" or "1-0-1"
-    duration: str # e.g. "5 days"
+    strength: Optional[str] = None # e.g. "500mg"
+    frequency: Optional[str] = None # e.g. "Once daily" or "1-0-1"
+    duration: Optional[str] = None # e.g. "5 days"
     instructions: Optional[str] = None # e.g. "Before food"
     warnings: Optional[str] = None
+
 
 class PrescriptionBase(BaseModel):
     medicines: List[MedicineSchema] = []

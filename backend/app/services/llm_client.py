@@ -10,10 +10,19 @@ class LLMClient:
         self.provider = settings.LLM_PROVIDER.lower()
         self._openai_client = None
         self._gemini_initialized = False
+        self.is_openrouter = False
 
         if self.provider == "openai":
             if settings.OPENAI_API_KEY:
-                self._openai_client = OpenAI(api_key=settings.OPENAI_API_KEY)
+                if settings.OPENAI_API_KEY.startswith("sk-or-"):
+                    self.is_openrouter = True
+                    self._openai_client = OpenAI(
+                        base_url="https://openrouter.ai/api/v1",
+                        api_key=settings.OPENAI_API_KEY
+                    )
+                    print("OpenRouter API key detected. Configured OpenAI client for OpenRouter.")
+                else:
+                    self._openai_client = OpenAI(api_key=settings.OPENAI_API_KEY)
             else:
                 print("Warning: OPENAI_API_KEY not configured. Falling back to Gemini.")
                 self.provider = "gemini"
@@ -27,7 +36,14 @@ class LLMClient:
 
     def get_openai_client(self) -> OpenAI:
         if not self._openai_client:
-            self._openai_client = OpenAI(api_key=settings.OPENAI_API_KEY or "missing-key")
+            if settings.OPENAI_API_KEY and settings.OPENAI_API_KEY.startswith("sk-or-"):
+                self.is_openrouter = True
+                self._openai_client = OpenAI(
+                    base_url="https://openrouter.ai/api/v1",
+                    api_key=settings.OPENAI_API_KEY
+                )
+            else:
+                self._openai_client = OpenAI(api_key=settings.OPENAI_API_KEY or "missing-key")
         return self._openai_client
 
     def generate_text(self, prompt: str, system_instruction: Optional[str] = None, response_format_json: bool = False) -> str:
@@ -45,8 +61,13 @@ class LLMClient:
             if response_format_json:
                 kwargs["response_format"] = {"type": "json_object"}
                 
+            model_name = "openai/gpt-4o-mini" if self.is_openrouter else "gpt-4o-mini"
+            if self.is_openrouter:
+                # Restrict max_tokens so low-balance free OpenRouter accounts don't get blocked
+                kwargs["max_tokens"] = 1500
+            
             response = client.chat.completions.create(
-                model="gpt-4o-mini",
+                model=model_name,
                 messages=messages,
                 temperature=0.2,
                 **kwargs

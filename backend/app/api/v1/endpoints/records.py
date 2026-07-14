@@ -68,6 +68,7 @@ async def upload_medical_record(
         original_filename=filename,
         uploaded_by=current_user.full_name
     )
+    db_record.ocr_record = None
     db.add(db_record)
     await db.flush()
 
@@ -147,7 +148,7 @@ async def process_record_ocr(
     
     # Process through LLM to extract structured data
     template = load_prompt_template("ocr_to_structured_data.txt")
-    prompt = template.format(ocr_text=raw_text)
+    prompt = template.replace("{ocr_text}", raw_text)
     system_instruction = (
         "You are a medical record analyzer. "
         "Extract diagnoses, medications, lab values, and metadata into strict JSON."

@@ -26,7 +26,7 @@ class PrescriptionService:
             return []
             
         template = load_prompt_template("prescription_extraction.txt")
-        formatted_prompt = template.format(dictation=dictation)
+        formatted_prompt = template.replace("{dictation}", dictation)
         
         system_instruction = (
             "You are an expert pharmacology transcription system. "
@@ -234,8 +234,11 @@ class PrescriptionService:
         story.append(Spacer(1, 40))
 
         # Bottom section: Signature block on right, Native QR code on left
-        # Generate QR code containing the visit ID
-        qr_code = QrCodeWidget(value=str(visit_id), width=65, height=65)
+        qr_code = QrCodeWidget(value=str(visit_id))
+        qr_code.x = 0
+        qr_code.y = 0
+        qr_code.barWidth = 65
+        qr_code.barHeight = 65
         qr_drawing = Drawing(65, 65)
         qr_drawing.add(qr_code)
 

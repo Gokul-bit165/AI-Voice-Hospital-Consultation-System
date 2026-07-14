@@ -6,9 +6,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy import or_
 
-from backend.app.core.deps import get_db_session, require_reception, require_any_role
+from backend.app.core.deps import get_db_session, require_reception, require_any_role, require_admin
 from backend.app.models.models import Patient, Timeline, AuditLog, Doctor
-from backend.app.schemas.schemas import PatientCreate, PatientResponse, PatientUpdate, VoiceRegisterRequest, VoiceRegisterConfirmRequest
+from backend.app.schemas.schemas import PatientCreate, PatientResponse, PatientUpdate, VoiceRegisterRequest, VoiceRegisterConfirmRequest, TimelineResponse
 from backend.app.services.voice import voice_service
 from backend.app.services.llm_client import llm_client
 from backend.app.services.rag import rag_service
@@ -172,7 +172,7 @@ async def voice_register_patient(
         
     # Extract structured fields using LLM
     template = load_prompt_template("voice_registration_extraction.txt")
-    prompt = template.format(transcript=transcript)
+    prompt = template.replace("{transcript}", transcript)
     
     system_instruction = (
         "You are a medical data extraction bot. "

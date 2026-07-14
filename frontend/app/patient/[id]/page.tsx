@@ -223,13 +223,24 @@ export default function PatientProfilePage({ params: paramsPromise }: { params: 
                           evt.event_type === "prescription" ? "bg-rose-500" : "bg-slate-400"
                         }`} />
                         
-                        <div>
-                          <p className="text-[10px] text-slate-400 font-mono font-semibold">
-                            {new Date(evt.event_date).toLocaleString()}
-                          </p>
-                          <p className="text-xs text-slate-850 font-semibold mt-0.5">
-                            {evt.event_summary}
-                          </p>
+                        <div className="flex items-start justify-between gap-4">
+                          <div>
+                            <p className="text-[10px] text-slate-400 font-mono font-semibold">
+                              {new Date(evt.event_date).toLocaleString()}
+                            </p>
+                            <p className="text-xs text-slate-850 font-semibold mt-0.5">
+                              {evt.event_summary}
+                            </p>
+                          </div>
+                          {evt.event_type === "prescription" && evt.reference_id && (
+                            <button
+                              onClick={() => window.location.href = `/patient/${patientId}/prescription/preview?prescriptionId=${evt.reference_id}`}
+                              className="text-[10px] text-sky-600 hover:underline font-bold inline-flex items-center gap-1 shrink-0 cursor-pointer"
+                            >
+                              <FileText className="h-3.5 w-3.5" />
+                              <span>View Prescription</span>
+                            </button>
+                          )}
                         </div>
                       </div>
                     ))

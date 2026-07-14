@@ -30,7 +30,7 @@ class ScribeService:
             )
 
         template = load_prompt_template("medical_scribe.txt")
-        formatted_prompt = template.format(transcript=transcript)
+        formatted_prompt = template.replace("{transcript}", transcript)
         
         system_instruction = (
             "You are a strict, highly accurate AI Medical Scribe. "

@@ -1,0 +1,30 @@
+﻿# Local development storage
+storage/
+storage_old/
+
+# Environment files with secrets
+.env
+backend/.env
+frontend/.env
+frontend/.env.local
+
+# Python caches and virtualenvs
+__pycache__/
+*.py[cod]
+*.class
+.venv/
+venv/
+env/
+.pytest_cache/
+
+# Node/Next.js files
+node_modules/
+frontend/node_modules/
+.next/
+frontend/.next/
+out/
+build/
+
+# OS files
+.DS_Store
+Thumbs.db

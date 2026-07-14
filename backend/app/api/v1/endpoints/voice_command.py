@@ -35,7 +35,7 @@ async def process_voice_command(
 
     # Load prompt and classify
     template = load_prompt_template("voice_command_classification.txt")
-    prompt = template.format(command=transcript)
+    prompt = template.replace("{command}", transcript)
     
     system_instruction = (
         "You are a command classifier for a medical voice portal. "
