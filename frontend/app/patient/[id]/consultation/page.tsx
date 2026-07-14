@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef, useCallback, use } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter, useSearchParams } from "next/navigation";
 import DashboardLayout from "@/components/DashboardLayout";
+import LiveCaption from "@/components/LiveCaption";
 import { api, Visit, Vitals, Medicine } from "@/lib/api";
 import {
   ArrowLeft, Loader2, CheckCircle, Printer,
@@ -19,28 +20,7 @@ import {
 type RagMsg = { sender: "user" | "ai"; text: string; citations?: string[] };
 type Tab = "vitals" | "rx" | "history";
 
-const MEDICINES_LIST = [
-  "Paracetamol", "Amoxicillin", "Azithromycin", "Metformin", "Cetirizine",
-  "Ibuprofen", "Omeprazole", "Pantoprazole", "Diclofenac", "Amlodipine",
-  "Losartan", "Atorvastatin", "Rosuvastatin", "Levothyroxine", "Glimepiride",
-  "Ciprofloxacin", "Levofloxacin", "Doxycycline", "Metronidazole", "Ondansetron",
-  "Domperidone", "Rabeprazole", "Montelukast", "Levocetirizine", "Aspirin",
-  "Clopidogrel", "Telmisartan", "Olmesartan", "Teneligliptin", "Vildagliptin",
-  "Sitagliptin", "Gliclazide", "Pioglitazone", "Gabapentin", "Pregabalin",
-  "Mecobalamin", "Vitamin D3", "Calcium", "Iron", "Folic Acid",
-  "Salbutamol", "Budesonide", "Formoterol", "Fluticasone", "Tamsulosin",
-  "Finasteride", "Sildenafil", "Tadalafil", "Fluconazole", "Itraconazole",
-  "Ketoconazole", "Clotrimazole", "Mupirocin", "Fusidic Acid", "Hydrocortisone",
-  "Betamethasone", "Clobetasol", "Permethrin", "Albendazole", "Ivermectin",
-  "Dexamethasone", "Prednisolone", "Methylprednisolone", "Deflazacort", "Aceclofenac",
-  "Etoricoxib", "Tramadol", "Tapentadol", "Ranitidine", "Famotidine",
-  "Sucralfate", "Ursodeoxycholic Acid", "Lactulose", "Bisacodyl", "Loperamide",
-  "Racecadotril", "Saccharomyces boulardii", "Bacillus clausii", "ORS", "Zinc",
-  "Vitamin C", "B-Complex", "Alpha Lipoic Acid", "Cilostazol", "Pentoxifylline",
-  "Flunarizine", "Propranolol", "Metoprolol", "Bisoprolol", "Carvedilol",
-  "Amiodarone", "Digoxin", "Warfarin", "Acenocoumarol", "Rivaroxaban",
-  "Apixaban", "Dabigatran", "Enoxaparin", "Heparin", "Insulin"
-];
+import { MEDICINES_LIST } from "@/lib/medicines";
 
 // Helper to parse frequency string like "1-0-1" or fallback
 const parseFrequency = (freqStr: string) => {
@@ -166,7 +146,8 @@ export default function ConsultationPage({
     router.push(`/patient/${patientId}/consultation?tab=${tabId}`);
   };
 
-  const [liveTranscript, setLiveTranscript] = useState("");
+  const [finalTranscript, setFinalTranscript] = useState("");
+  const [interimTranscript, setInterimTranscript] = useState("");
   const recognitionRef = useRef<any>(null);
 
   // ── Resizable AI assistant panel ─────────────────────────────────────────
@@ -281,7 +262,8 @@ export default function ConsultationPage({
   const startDictation = async () => {
     setDictating(true);
     setDictationStatus("🎙 Listening — speak now");
-    setLiveTranscript("");
+    setFinalTranscript("");
+    setInterimTranscript("");
     chunksRef.current = [];
     
     // Start native Web Speech API recognition for realtime captioning
@@ -296,14 +278,15 @@ export default function ConsultationPage({
         recognition.onresult = (event: any) => {
           let interimTranscript = "";
           let finalTranscript = "";
-          for (let i = event.resultIndex; i < event.results.length; ++i) {
+          for (let i = 0; i < event.results.length; ++i) {
             if (event.results[i].isFinal) {
               finalTranscript += event.results[i][0].transcript;
             } else {
               interimTranscript += event.results[i][0].transcript;
             }
           }
-          setLiveTranscript(finalTranscript + interimTranscript);
+          setFinalTranscript(finalTranscript);
+          setInterimTranscript(interimTranscript);
         };
         
         recognition.onerror = (e: any) => {
@@ -528,10 +511,13 @@ export default function ConsultationPage({
   return (
     <DashboardLayout vitals={vitals} setVitals={setVitals} timeline={timeline}>
       {/* ══════════════ BODY: MAIN (tabs) + RESIZE HANDLE + AI PANEL ══════════════ */}
-      <div className="flex-1 flex min-h-0 h-full w-full overflow-hidden">
+      <div 
+        className="flex-1 flex flex-col lg:flex-row min-h-0 h-full w-full lg:overflow-hidden overflow-y-auto"
+        style={{ "--chat-width": `${chatWidth}px` } as React.CSSProperties}
+      >
 
         {/* ══════ MAIN WORKSPACE ══════ */}
-        <div className="flex-1 flex flex-col min-w-0" style={{ width: `calc(100% - ${chatWidth}px)` }}>
+        <div className="flex-1 flex flex-col min-w-0 w-full lg:w-[calc(100%-var(--chat-width))]" style={{}}>
           <div className="px-6 pt-4 flex items-center justify-between flex-shrink-0">
             <button
               onClick={() => (window.location.href = `/patient/${patientId}`)}
@@ -636,87 +622,67 @@ export default function ConsultationPage({
                     </p>
                   </div>
 
-                  {/* Hero Voice Controller */}
-                  <div className="flex flex-col items-center justify-center space-y-6 py-6 w-full max-w-2xl">
-                    
-                    {/* Live Waveform and mic */}
-                    <div className="relative flex items-center justify-center h-40 w-40">
-                      
-                      {/* Animated waves when dictating */}
-                      {dictating && (
-                        <>
-                          <div className="absolute inset-0 rounded-full bg-blue-50 border border-blue-100 animate-ping opacity-60" style={{ animationDuration: "1.8s" }} />
-                          <div className="absolute inset-4 rounded-full bg-blue-100/50 animate-ping opacity-45" style={{ animationDuration: "1.4s" }} />
-                        </>
-                      )}
-                      
-                      {dictating ? (
+                  {/* Dynamic Voice Dictation Workspace */}
+                  <div className="flex-1 w-full flex flex-col items-center justify-center py-6 max-w-2xl min-h-[30vh]">
+                    {dictationLoading ? (
+                      <div className="flex flex-col items-center justify-center space-y-4">
+                        <Loader2 className="h-12 w-12 text-[#2563EB] animate-spin" />
+                        <span className="text-sm font-bold uppercase tracking-wider text-[#6B7280]">
+                          Analyzing Audio...
+                        </span>
+                      </div>
+                    ) : dictating ? (
+                      <div className="flex flex-col items-center justify-center space-y-6 w-full animate-fade-in">
+                        {/* Live Captioning takes over the entire center space */}
+                        <LiveCaption transcriptStream={{ finalText: finalTranscript, interimText: interimTranscript }} />
+                        
+                        {/* Google Assistant waves */}
+                        <div className="flex items-end gap-[4px] h-6 px-6">
+                          {[...Array(16)].map((_, i) => (
+                            <div
+                              key={i}
+                              className="w-[2px] bg-[#2563EB] rounded-full"
+                              style={{
+                                height: "100%",
+                                animation: `rxwave ${0.4 + (i % 4) * 0.15}s ease-in-out infinite alternate`,
+                                animationDelay: `${i * 0.04}s`,
+                              }}
+                            />
+                          ))}
+                        </div>
+
+                        {/* Smaller stop button underneath the text */}
                         <button
                           onClick={stopDictation}
-                          className="h-28 w-28 rounded-full bg-[#DC2626] hover:bg-red-700 text-white flex flex-col items-center justify-center shadow-lg hover:scale-105 active:scale-95 transition-all cursor-pointer z-10"
+                          className="h-12 px-6 rounded-full bg-[#DC2626] hover:bg-red-700 text-white flex items-center justify-center gap-2 shadow-md hover:scale-105 active:scale-95 transition-all cursor-pointer z-10"
                         >
-                          <MicOff className="h-8 w-8 text-white animate-pulse" />
-                          <span className="text-[9px] font-bold uppercase tracking-wider mt-2">Stop Listening</span>
+                          <MicOff className="h-4 w-4 text-white animate-pulse" />
+                          <span className="text-[10px] font-bold uppercase tracking-wider">Stop Listening</span>
                         </button>
-                      ) : (
+                      </div>
+                    ) : (
+                      <div className="flex flex-col items-center justify-center space-y-4 animate-fade-in">
+                        {/* Big Start Recording Button */}
                         <button
                           onClick={startDictation}
-                          disabled={dictationLoading}
-                          className="h-28 w-28 rounded-full bg-[#2563EB] hover:bg-blue-700 disabled:opacity-40 text-white flex flex-col items-center justify-center shadow-lg hover:scale-105 active:scale-95 transition-all cursor-pointer z-10"
+                          className="h-28 w-28 rounded-full bg-[#2563EB] hover:bg-blue-700 text-white flex flex-col items-center justify-center shadow-lg hover:scale-105 active:scale-95 transition-all cursor-pointer z-10"
                         >
-                          {dictationLoading ? (
-                            <Loader2 className="h-8 w-8 text-white animate-spin" />
-                          ) : (
-                            <Mic className="h-8 w-8 text-white animate-pulse" />
-                          )}
+                          <Mic className="h-8 w-8 text-white animate-pulse" />
                           <span className="text-[9px] font-bold uppercase tracking-wider mt-2">
-                            {dictationLoading ? "Analyzing Audio" : "Start Recording"}
+                            Start Recording
                           </span>
                         </button>
-                      )}
-                    </div>
-
-                    {/* Google Assistant waves */}
-                    {dictating && (
-                      <div className="flex items-end gap-[4px] h-6 px-6">
-                        {[...Array(16)].map((_, i) => (
-                          <div
-                            key={i}
-                            className="w-[2px] bg-[#2563EB] rounded-full"
-                            style={{
-                              height: "100%",
-                              animation: `rxwave ${0.4 + (i % 4) * 0.15}s ease-in-out infinite alternate`,
-                              animationDelay: `${i * 0.04}s`,
-                            }}
-                          />
-                        ))}
+                        <span className="text-[11px] text-[#9CA3AF] font-bold uppercase tracking-wider">
+                          Click to dictate prescription
+                        </span>
                       </div>
                     )}
 
                     {dictationStatus && (
-                      <span className="text-xs bg-blue-50 text-[#2563EB] px-3.5 py-1.5 rounded-full border border-blue-100 font-bold uppercase tracking-wider">
+                      <span className="text-xs bg-blue-50 text-[#2563EB] px-3.5 py-1.5 rounded-full border border-blue-100 font-bold uppercase tracking-wider mt-4">
                         {dictationStatus}
                       </span>
                     )}
-                  </div>
-
-                  {/* Realtime Live Text blackboard */}
-                  <div className="w-full bg-[#F8FAFC] border border-[#E5E7EB] rounded-2xl p-5 h-44 overflow-y-auto text-left flex flex-col justify-start">
-                    <span className="text-[10px] text-[#6B7280] font-bold uppercase tracking-wider block mb-2">
-                      Realtime Transcription Output
-                    </span>
-                    <div className="flex-1 overflow-y-auto">
-                      {liveTranscript ? (
-                        <p className="text-sm text-slate-800 font-medium leading-relaxed">
-                          {liveTranscript}
-                          <span className="inline-block w-1.5 h-4 bg-[#2563EB] ml-1 animate-pulse" />
-                        </p>
-                      ) : (
-                        <p className="text-xs italic text-[#6B7280] mt-1">
-                          No audio input. Click "Start Recording" and speak clearly to see realtime transcription...
-                        </p>
-                      )}
-                    </div>
                   </div>
 
                 </div>
@@ -1024,7 +990,7 @@ export default function ConsultationPage({
         {/* ══════ COL-RESIZE HANDLE ══════ */}
         <div
           onMouseDown={startResize}
-          className="w-1.5 hover:w-2 bg-[#E5E7EB] hover:bg-[#2563EB] cursor-col-resize flex-shrink-0 transition-all duration-150 relative z-30"
+          className="hidden lg:block w-1.5 hover:w-2 bg-[#E5E7EB] hover:bg-[#2563EB] cursor-col-resize flex-shrink-0 transition-all duration-150 relative z-30"
           title="Drag to resize RAG Clinical Assistant"
         >
           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-white border border-[#E5E7EB] rounded-md p-1 shadow-sm pointer-events-none text-[#6B7280]">
@@ -1034,8 +1000,8 @@ export default function ConsultationPage({
 
         {/* ══════ AI CLINICAL ASSISTANT & TIMELINE PANEL (Right Sidebar) ══════ */}
         <div
-          className="flex-shrink-0 flex flex-col bg-white border-l border-[#E5E7EB] h-full overflow-hidden"
-          style={{ width: chatWidth }}
+          className="flex-shrink-0 flex flex-col bg-white border-t lg:border-t-0 lg:border-l border-[#E5E7EB] min-h-[50vh] lg:h-full w-full lg:w-[var(--chat-width)] overflow-hidden"
+          style={{}}
         >
           {/* AI Clinical Assistant Chat Card */}
           <div className="flex-1 flex flex-col min-h-0 bg-white">
