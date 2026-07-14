@@ -2,7 +2,7 @@
 
 import React, { useState, useRef } from "react";
 import { api, PatientCreate } from "@/lib/api";
-import Navbar from "@/components/Navbar";
+import DashboardLayout from "@/components/DashboardLayout";
 import { Mic, Square, Loader2, ArrowLeft, CheckCircle2, UserCircle2, ShieldAlert } from "lucide-react";
 
 export default function RegisterVoicePage() {
@@ -131,60 +131,58 @@ export default function RegisterVoicePage() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col font-sans">
-      <Navbar />
-      
-      <div className="flex-1 max-w-4xl w-full mx-auto p-4 sm:p-6">
+    <DashboardLayout>
+      <div className="h-full w-full p-4 sm:p-6 overflow-y-auto pb-24">
         <button
           onClick={() => window.location.href = "/reception"}
-          className="inline-flex items-center gap-1 text-slate-500 hover:text-slate-900 text-xs font-semibold uppercase tracking-wider mb-5 cursor-pointer"
+          className="inline-flex items-center gap-1.5 text-[#6B7280] hover:text-[#111827] text-xs font-bold uppercase tracking-wider mb-5 cursor-pointer"
         >
           <ArrowLeft className="h-4 w-4" />
-          <span>Back to Reception</span>
+          <span>Back to Directory</span>
         </button>
 
-        <div className="bg-white border border-slate-200 rounded-xl p-6 sm:p-8 shadow-sm">
+        <div className="bg-white border border-[#E5E7EB] rounded-2xl p-6 sm:p-8 shadow-sm max-w-3xl mx-auto">
           <div className="text-center max-w-lg mx-auto mb-8">
-            <h2 className="text-xl font-bold text-slate-900">Voice Demographics Registration</h2>
-            <p className="text-xs text-slate-500 mt-1">
+            <h2 className="text-base font-bold text-[#111827] uppercase tracking-wider">Voice Demographics Registration</h2>
+            <p className="text-xs text-[#6B7280] mt-1.5 leading-relaxed">
               Press the recording button and speak the patient's demographics details clearly. 
               Example: <i>"Patient name is Alex Cooper, age 45, male. Phone number is 9876500123. Emergency contact is Helen Cooper at 9876500124. Allergies: Penicillin."</i>
             </p>
           </div>
 
           {/* Voice recorder interface */}
-          <div className="flex flex-col items-center justify-center py-6 border border-slate-100 bg-slate-50/50 rounded-2xl mb-8">
+          <div className="flex flex-col items-center justify-center py-6 border border-[#E5E7EB] bg-[#F8FAFC] rounded-2xl mb-8">
             {recording ? (
               <div className="flex flex-col items-center space-y-4">
                 {/* Stylized waveform */}
-                <div className="flex items-end gap-1.5 h-10 px-6">
-                  {[...Array(9)].map((_, i) => (
+                <div className="flex items-end gap-[3px] h-8 px-6">
+                  {[...Array(12)].map((_, i) => (
                     <div
                       key={i}
-                      className="w-1.5 bg-sky-500 rounded-full animate-bounce"
+                      className="w-[2px] bg-[#2563EB] rounded-full"
                       style={{
-                        height: `${Math.random() * 80 + 20}%`,
-                        animationDelay: `${i * 0.1}s`,
-                        animationDuration: "0.6s"
+                        height: "100%",
+                        animation: `rxwave ${0.4 + (i % 4) * 0.1}s ease-in-out infinite alternate`,
+                        animationDelay: `${i * 0.03}s`
                       }}
                     ></div>
                   ))}
                 </div>
-                <p className="text-xs text-slate-500 font-semibold animate-pulse">Recording patient details... click stop when finished.</p>
+                <p className="text-xs text-[#2563EB] font-bold uppercase tracking-wider animate-pulse">Recording patient details... click stop when finished.</p>
                 <button
                   onClick={stopRecording}
-                  className="p-4 bg-rose-600 hover:bg-rose-500 text-white rounded-full shadow-lg shadow-rose-600/10 active:scale-95 transition-all cursor-pointer"
+                  className="p-4 bg-[#DC2626] hover:bg-red-700 text-white rounded-full shadow-sm active:scale-95 transition-all cursor-pointer flex-shrink-0"
                 >
                   <Square className="h-5 w-5 fill-white" />
                 </button>
               </div>
             ) : (
               <div className="flex flex-col items-center space-y-4">
-                <p className="text-xs text-slate-400 font-semibold">Press microphone to start recording dictation</p>
+                <p className="text-xs text-[#6B7280] font-bold uppercase tracking-wider">Press microphone to start recording dictation</p>
                 <button
                   onClick={startRecording}
                   disabled={loading}
-                  className="p-4 bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white rounded-full shadow-lg shadow-sky-600/10 active:scale-95 transition-all cursor-pointer mic-pulse"
+                  className="p-4 bg-[#2563EB] hover:bg-blue-700 disabled:opacity-50 text-white rounded-full shadow-sm active:scale-95 transition-all cursor-pointer"
                 >
                   <Mic className="h-5 w-5" />
                 </button>
@@ -192,146 +190,132 @@ export default function RegisterVoicePage() {
             )}
 
             {loading && (
-              <div className="flex items-center gap-2 mt-4 text-xs font-semibold text-slate-500">
-                <Loader2 className="h-4 w-4 animate-spin text-sky-600" />
+              <div className="flex items-center gap-2 mt-4 text-xs font-bold text-[#2563EB] uppercase tracking-wider">
+                <Loader2 className="h-4 w-4 animate-spin text-[#2563EB]" />
                 <span>AI Clinical Extraction parsing speech transcript...</span>
               </div>
             )}
           </div>
 
-          {/* Render confirmation form when draft parsed */}
+          {/* Registration form details */}
           {patientDraft && (
-            <div className="border-t border-slate-100 pt-6">
-              <div className="flex items-center gap-2 mb-5">
-                <UserCircle2 className="h-5 w-5 text-sky-600" />
-                <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">Confirm Patient Demographics Draft</h3>
+            <form onSubmit={handleConfirmSubmit} className="space-y-6">
+              <div className="bg-blue-50/50 border border-blue-100 rounded-xl p-4 flex gap-3 mb-2">
+                <UserCircle2 className="h-6 w-6 text-[#2563EB] shrink-0 mt-0.5" />
+                <div>
+                  <h3 className="text-xs font-bold text-[#111827] uppercase tracking-wider">Review Speech Extracted Details</h3>
+                  <p className="text-xs text-[#6B7280] mt-0.5">Please review the AI extracted demographics profile below. Edit fields manually if needed before finalizing.</p>
+                </div>
               </div>
 
-              <form onSubmit={handleConfirmSubmit} className="space-y-4">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Full Name</label>
-                    <input
-                      type="text"
-                      required
-                      value={patientDraft.full_name || ""}
-                      onChange={(e) => handleFieldChange("full_name", e.target.value)}
-                      className="block w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-sky-500 focus:bg-white"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Date of Birth</label>
-                    <input
-                      type="date"
-                      required
-                      value={patientDraft.date_of_birth || ""}
-                      onChange={(e) => handleFieldChange("date_of_birth", e.target.value)}
-                      className="block w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-sky-500 focus:bg-white"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Gender</label>
-                    <select
-                      value={patientDraft.gender || ""}
-                      onChange={(e) => handleFieldChange("gender", e.target.value)}
-                      className="block w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-sky-500 focus:bg-white"
-                    >
-                      <option value="">Select Gender</option>
-                      <option value="Male">Male</option>
-                      <option value="Female">Female</option>
-                      <option value="Other">Other</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Phone Number</label>
-                    <input
-                      type="text"
-                      required
-                      value={patientDraft.phone || ""}
-                      onChange={(e) => handleFieldChange("phone", e.target.value)}
-                      className="block w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-sky-500 focus:bg-white"
-                    />
-                  </div>
-                  <div className="sm:col-span-2">
-                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Residential Address</label>
-                    <input
-                      type="text"
-                      value={patientDraft.address || ""}
-                      onChange={(e) => handleFieldChange("address", e.target.value)}
-                      className="block w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-sky-500 focus:bg-white"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Emergency Contact Name</label>
-                    <input
-                      type="text"
-                      value={patientDraft.emergency_contact_name || ""}
-                      onChange={(e) => handleFieldChange("emergency_contact_name", e.target.value)}
-                      className="block w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-sky-500 focus:bg-white"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Emergency Contact Phone</label>
-                    <input
-                      type="text"
-                      value={patientDraft.emergency_contact_phone || ""}
-                      onChange={(e) => handleFieldChange("emergency_contact_phone", e.target.value)}
-                      className="block w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-sky-500 focus:bg-white"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Blood Group</label>
-                    <select
-                      value={patientDraft.blood_group || ""}
-                      onChange={(e) => handleFieldChange("blood_group", e.target.value)}
-                      className="block w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-sky-500 focus:bg-white"
-                    >
-                      <option value="">Select Blood Group</option>
-                      <option value="A+">A+</option>
-                      <option value="A-">A-</option>
-                      <option value="B+">B+</option>
-                      <option value="B-">B-</option>
-                      <option value="O+">O+</option>
-                      <option value="O-">O-</option>
-                      <option value="AB+">AB+</option>
-                      <option value="AB-">AB-</option>
-                    </select>
-                  </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-[10px] font-bold text-[#6B7280] uppercase tracking-wider mb-1">Full Patient Name</label>
+                  <input
+                    type="text"
+                    required
+                    value={patientDraft.full_name}
+                    onChange={(e) => handleFieldChange("full_name", e.target.value)}
+                    className="w-full px-3.5 py-2.5 bg-[#F8FAFC] border border-[#E5E7EB] rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:border-[#2563EB]"
+                  />
                 </div>
 
-                {/* Allergies list section */}
-                <div className="bg-slate-50 border border-slate-100 rounded-xl p-4">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs font-bold text-slate-600 uppercase tracking-wide inline-flex items-center gap-1.5">
-                      <ShieldAlert className="h-4 w-4 text-amber-500" />
-                      <span>Allergies</span>
-                    </span>
+                <div>
+                  <label className="block text-[10px] font-bold text-[#6B7280] uppercase tracking-wider mb-1">Date of Birth</label>
+                  <input
+                    type="date"
+                    required
+                    value={patientDraft.date_of_birth}
+                    onChange={(e) => handleFieldChange("date_of_birth", e.target.value)}
+                    className="w-full px-3.5 py-2.5 bg-[#F8FAFC] border border-[#E5E7EB] rounded-xl text-xs font-semibold text-slate-850 focus:outline-none focus:border-[#2563EB]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold text-[#6B7280] uppercase tracking-wider mb-1">Gender</label>
+                  <select
+                    required
+                    value={patientDraft.gender}
+                    onChange={(e) => handleFieldChange("gender", e.target.value)}
+                    className="w-full px-3.5 py-2.5 bg-[#F8FAFC] border border-[#E5E7EB] rounded-xl text-xs font-semibold text-slate-850 focus:outline-none focus:border-[#2563EB]"
+                  >
+                    <option value="Male">Male</option>
+                    <option value="Female">Female</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold text-[#6B7280] uppercase tracking-wider mb-1">Contact Phone</label>
+                  <input
+                    type="text"
+                    required
+                    value={patientDraft.phone}
+                    onChange={(e) => handleFieldChange("phone", e.target.value)}
+                    className="w-full px-3.5 py-2.5 bg-[#F8FAFC] border border-[#E5E7EB] rounded-xl text-xs font-semibold text-slate-850 focus:outline-none focus:border-[#2563EB]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold text-[#6B7280] uppercase tracking-wider mb-1">Emergency Contact Name</label>
+                  <input
+                    type="text"
+                    value={patientDraft.emergency_contact_name || ""}
+                    onChange={(e) => handleFieldChange("emergency_contact_name", e.target.value)}
+                    className="w-full px-3.5 py-2.5 bg-[#F8FAFC] border border-[#E5E7EB] rounded-xl text-xs font-semibold text-slate-850 focus:outline-none focus:border-[#2563EB]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold text-[#6B7280] uppercase tracking-wider mb-1">Emergency Contact Phone</label>
+                  <input
+                    type="text"
+                    value={patientDraft.emergency_contact_phone || ""}
+                    onChange={(e) => handleFieldChange("emergency_contact_phone", e.target.value)}
+                    className="w-full px-3.5 py-2.5 bg-[#F8FAFC] border border-[#E5E7EB] rounded-xl text-xs font-semibold text-slate-850 focus:outline-none focus:border-[#2563EB]"
+                  />
+                </div>
+
+                <div className="col-span-1 md:col-span-2">
+                  <label className="block text-[10px] font-bold text-[#6B7280] uppercase tracking-wider mb-1">Address</label>
+                  <input
+                    type="text"
+                    value={patientDraft.address || ""}
+                    onChange={(e) => handleFieldChange("address", e.target.value)}
+                    className="w-full px-3.5 py-2.5 bg-[#F8FAFC] border border-[#E5E7EB] rounded-xl text-xs font-semibold text-slate-850 focus:outline-none focus:border-[#2563EB]"
+                  />
+                </div>
+
+                {/* Allergies subform */}
+                <div className="col-span-1 md:col-span-2 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-[10px] font-bold text-[#6B7280] uppercase tracking-wider">Allergies & Contraindications</label>
                     <button
                       type="button"
                       onClick={addAllergyField}
-                      className="text-xs text-sky-600 hover:text-sky-500 font-semibold cursor-pointer"
+                      className="px-2 py-1 rounded bg-blue-50 border border-blue-100 text-[10px] font-bold text-[#2563EB] hover:bg-blue-100 cursor-pointer"
                     >
                       + Add Allergy
                     </button>
                   </div>
-                  
                   {patientDraft.allergies.length === 0 ? (
-                    <p className="text-xs text-slate-400">No allergies listed. Click Add Allergy if patient has known reactions.</p>
+                    <p className="text-xs italic text-[#6B7280]">No allergies captured. Click Add Allergy if needed.</p>
                   ) : (
                     <div className="grid grid-cols-2 gap-2">
                       {patientDraft.allergies.map((allergy, i) => (
-                        <div key={i} className="flex gap-2 items-center">
+                        <div key={i} className="flex gap-2">
                           <input
                             type="text"
-                            placeholder="e.g. Penicillin"
+                            required
                             value={allergy}
                             onChange={(e) => handleAllergyChange(i, e.target.value)}
-                            className="flex-1 px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs focus:outline-none focus:border-sky-500"
+                            placeholder="e.g. Penicillin"
+                            className="flex-1 px-3.5 py-2 bg-[#F8FAFC] border border-[#E5E7EB] rounded-xl text-xs font-semibold text-slate-850 focus:outline-none focus:border-[#2563EB]"
                           />
                           <button
                             type="button"
                             onClick={() => removeAllergyField(i)}
-                            className="text-xs text-rose-500 font-bold hover:underline cursor-pointer"
+                            className="px-3 bg-red-50 hover:bg-red-100 text-[#DC2626] border border-red-100 rounded-xl font-bold text-xs cursor-pointer"
                           >
                             Remove
                           </button>
@@ -340,33 +324,49 @@ export default function RegisterVoicePage() {
                     </div>
                   )}
                 </div>
+              </div>
 
-                <div className="pt-4 flex gap-4">
-                  <button
-                    type="submit"
-                    disabled={submitLoading}
-                    className="flex-1 inline-flex items-center justify-center gap-2 py-2.5 bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white rounded-lg text-sm font-semibold shadow-lg hover:shadow-sky-600/10 transition-all cursor-pointer"
-                  >
-                    {submitLoading ? (
-                      <>
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                        <span>Saving patient profile...</span>
-                      </>
-                    ) : success ? (
-                      <>
-                        <CheckCircle2 className="h-4 w-4 text-emerald-400 fill-white" />
-                        <span>Registration Successful!</span>
-                      </>
-                    ) : (
-                      <span>Save and Confirm Registration</span>
-                    )}
-                  </button>
-                </div>
-              </form>
+              {/* Submit Buttons */}
+              <div className="flex gap-3 justify-end pt-4 border-t border-[#E5E7EB]">
+                <button
+                  type="button"
+                  onClick={() => setPatientDraft(null)}
+                  className="px-4 py-2.5 border border-[#E5E7EB] hover:bg-slate-50 text-slate-700 rounded-xl font-bold cursor-pointer text-xs"
+                >
+                  Discard Draft
+                </button>
+                <button
+                  type="submit"
+                  disabled={submitLoading}
+                  className="px-5 py-2.5 bg-[#2563EB] hover:bg-blue-700 text-white rounded-xl font-bold cursor-pointer transition-all active:scale-95 text-xs shadow-sm flex items-center gap-1.5"
+                >
+                  {submitLoading ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <CheckCircle2 className="h-4 w-4" />
+                  )}
+                  <span>Save Demographics Profile</span>
+                </button>
+              </div>
+            </form>
+          )}
+
+          {success && (
+            <div className="mt-6 bg-emerald-50 border border-emerald-100 rounded-xl p-4 flex items-center justify-center gap-3">
+              <CheckCircle2 className="h-6 w-6 text-[#16A34A] shrink-0" />
+              <p className="text-xs font-bold text-emerald-800 uppercase tracking-wider">Patient profile saved successfully! Redirecting...</p>
             </div>
           )}
         </div>
       </div>
-    </div>
+      
+      {/* Waveform keyframe animations */}
+      <style>{`
+        @keyframes rxwave {
+          from { transform: scaleY(0.12); opacity: 0.5; }
+          to   { transform: scaleY(1); opacity: 1; }
+        }
+      `}</style>
+    </DashboardLayout>
   );
 }

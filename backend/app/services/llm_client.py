@@ -64,7 +64,7 @@ class LLMClient:
             model_name = "openai/gpt-4o-mini" if self.is_openrouter else "gpt-4o-mini"
             if self.is_openrouter:
                 # Restrict max_tokens so low-balance free OpenRouter accounts don't get blocked
-                kwargs["max_tokens"] = 1500
+                kwargs["max_tokens"] = 500
             
             response = client.chat.completions.create(
                 model=model_name,

@@ -45,60 +45,60 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-4">
-      {/* Background visual accents */}
-      <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-sky-500/10 rounded-full blur-3xl pointer-events-none"></div>
-      <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl pointer-events-none"></div>
+    <div className="min-h-screen bg-[#F8FAFC] flex flex-col items-center justify-center p-4 antialiased text-[#111827]" style={{ fontFamily: "'Inter', sans-serif" }}>
+      <head>
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+      </head>
 
-      <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-2xl shadow-xl overflow-hidden p-8 z-10">
+      <div className="w-full max-w-md bg-white border border-[#E5E7EB] rounded-2xl shadow-sm overflow-hidden p-8 z-10">
         <div className="text-center mb-8">
-          <div className="inline-flex p-3 bg-sky-500/15 border border-sky-500/25 rounded-2xl mb-4">
-            <Activity className="h-8 w-8 text-sky-400 animate-pulse" />
+          <div className="inline-flex p-3 bg-blue-50 border border-blue-100 rounded-2xl mb-4">
+            <Activity className="h-7 w-7 text-[#2563EB] animate-pulse" />
           </div>
-          <h1 className="text-2xl font-bold text-white uppercase tracking-wider font-sans">MetroVoice Portal</h1>
-          <p className="text-sm text-slate-400 mt-1 font-medium">Smart Voice Clinical Suite</p>
+          <h1 className="text-xl font-bold tracking-tight text-[#111827] uppercase">MetroVoice Portal</h1>
+          <p className="text-xs text-[#6B7280] mt-1 font-semibold uppercase tracking-wider">Clinical Workspace Suite</p>
         </div>
 
         {error && (
-          <div className="bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs px-4 py-3 rounded-lg mb-6 text-center font-medium">
+          <div className="bg-red-50 border border-red-100 text-[#DC2626] text-xs px-4 py-3 rounded-xl mb-6 text-center font-bold">
             {error}
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-5">
+        <form onSubmit={handleSubmit} className="space-y-5 text-xs">
           <div>
-            <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">
+            <label className="block text-[10px] font-bold text-[#6B7280] uppercase tracking-wider mb-2">
               Email Address
             </label>
             <div className="relative">
-              <span className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <Mail className="h-4 w-4 text-slate-500" />
+              <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
+                <Mail className="h-4 w-4 text-[#6B7280]" />
               </span>
               <input
                 type="email"
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="block w-full pl-10 pr-3 py-2.5 bg-slate-950 border border-slate-800 focus:border-sky-500 rounded-lg text-sm text-white placeholder-slate-600 focus:outline-none transition-colors"
+                className="block w-full pl-10 pr-3.5 py-3 bg-[#F8FAFC] border border-[#E5E7EB] focus:border-[#2563EB] focus:ring-1 focus:ring-[#2563EB] rounded-xl text-xs text-[#111827] placeholder-[#6B7280] focus:outline-none transition-colors font-semibold"
                 placeholder="doctor@hospital.com"
               />
             </div>
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">
+            <label className="block text-[10px] font-bold text-[#6B7280] uppercase tracking-wider mb-2">
               Password
             </label>
             <div className="relative">
-              <span className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <Lock className="h-4 w-4 text-slate-500" />
+              <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
+                <Lock className="h-4 w-4 text-[#6B7280]" />
               </span>
               <input
                 type="password"
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="block w-full pl-10 pr-3 py-2.5 bg-slate-950 border border-slate-800 focus:border-sky-500 rounded-lg text-sm text-white placeholder-slate-600 focus:outline-none transition-colors"
+                className="block w-full pl-10 pr-3.5 py-3 bg-[#F8FAFC] border border-[#E5E7EB] focus:border-[#2563EB] focus:ring-1 focus:ring-[#2563EB] rounded-xl text-xs text-[#111827] placeholder-[#6B7280] focus:outline-none transition-colors"
                 placeholder="••••••••"
               />
             </div>
@@ -107,34 +107,34 @@ export default function LoginPage() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-2.5 bg-sky-600 hover:bg-sky-500 text-white rounded-lg text-sm font-semibold shadow-lg hover:shadow-sky-600/10 focus:outline-none transition-all active:scale-98 cursor-pointer disabled:opacity-50"
+            className="w-full py-3 bg-[#2563EB] hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-sm focus:outline-none transition-all active:scale-95 cursor-pointer disabled:opacity-50"
           >
             {loading ? "Authenticating session..." : "Login to Workspace"}
           </button>
         </form>
 
-        <div className="mt-8 pt-6 border-t border-slate-800 text-center">
-          <p className="text-xs text-slate-500 mb-3 font-semibold uppercase tracking-wider">
+        <div className="mt-8 pt-6 border-t border-[#E5E7EB] text-center">
+          <p className="text-[10px] text-[#6B7280] mb-3.5 font-bold uppercase tracking-wider">
             Quick Testing Access
           </p>
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-3 gap-2 text-[10px]">
             <button
               onClick={() => handleQuickFill("doctor")}
-              className="px-2 py-1.5 bg-slate-950 hover:bg-slate-800 border border-slate-800 text-[10px] text-sky-400 font-bold rounded-lg cursor-pointer transition-colors"
+              className="px-2 py-2.5 bg-white hover:bg-slate-50 border border-[#E5E7EB] text-[#2563EB] font-bold rounded-xl cursor-pointer transition-colors shadow-xs"
             >
               Doctor Desk
             </button>
             <button
               onClick={() => handleQuickFill("reception")}
-              className="px-2 py-1.5 bg-slate-950 hover:bg-slate-800 border border-slate-800 text-[10px] text-indigo-400 font-bold rounded-lg cursor-pointer transition-colors"
+              className="px-2 py-2.5 bg-white hover:bg-slate-50 border border-[#E5E7EB] text-[#2563EB] font-bold rounded-xl cursor-pointer transition-colors shadow-xs"
             >
               Reception
             </button>
             <button
               onClick={() => handleQuickFill("admin")}
-              className="px-2 py-1.5 bg-slate-950 hover:bg-slate-800 border border-slate-800 text-[10px] text-amber-500 font-bold rounded-lg cursor-pointer transition-colors"
+              className="px-2 py-2.5 bg-white hover:bg-slate-50 border border-[#E5E7EB] text-slate-700 font-bold rounded-xl cursor-pointer transition-colors shadow-xs"
             >
-              System Admin
+              Admin Desk
             </button>
           </div>
         </div>

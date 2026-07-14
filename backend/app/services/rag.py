@@ -8,9 +8,18 @@ class PluggableEmbeddingProvider:
     def __init__(self):
         self.provider = settings.LLM_PROVIDER.lower()
         self.openai_client = None
+        self.is_openrouter = False
         
         if self.provider == "openai" and settings.OPENAI_API_KEY:
-            self.openai_client = OpenAI(api_key=settings.OPENAI_API_KEY)
+            if settings.OPENAI_API_KEY.startswith("sk-or-"):
+                self.is_openrouter = True
+                self.openai_client = OpenAI(
+                    base_url="https://openrouter.ai/api/v1",
+                    api_key=settings.OPENAI_API_KEY
+                )
+                print("OpenRouter API key detected. Configured OpenAI client for OpenRouter Embeddings.")
+            else:
+                self.openai_client = OpenAI(api_key=settings.OPENAI_API_KEY)
         elif self.provider == "gemini" and settings.GEMINI_API_KEY:
             genai.configure(api_key=settings.GEMINI_API_KEY)
 
@@ -20,9 +29,10 @@ class PluggableEmbeddingProvider:
             
         if self.provider == "openai" and self.openai_client:
             try:
+                model_name = "openai/text-embedding-3-small" if self.is_openrouter else "text-embedding-3-small"
                 response = self.openai_client.embeddings.create(
                     input=texts,
-                    model="text-embedding-3-small"
+                    model=model_name
                 )
                 return [data.embedding for data in response.data]
             except Exception as e:

@@ -6,6 +6,59 @@ import edge_tts
 import google.generativeai as genai
 from openai import OpenAI
 from backend.app.core.config import settings
+import json
+import re
+from rapidfuzz import fuzz
+
+# Load medicines for STT prompt and fuzzy matching
+MEDICINES_LIST = []
+try:
+    med_path = os.path.join(os.path.dirname(__file__), "..", "medicines.json")
+    with open(med_path, "r", encoding="utf-8") as f:
+        MEDICINES_LIST = json.load(f)
+except Exception as e:
+    print(f"Warning: Could not load medicines.json: {e}")
+
+def correct_medicine_names(transcript: str) -> tuple[str, str]:
+    """
+    Tokenizes the transcript, runs fuzzy matching against the medicine list,
+    and replaces words that have > 85% similarity.
+    Returns (raw_transcript, corrected_transcript).
+    """
+    if not MEDICINES_LIST:
+        return transcript, transcript
+
+    corrected_transcript = transcript
+    # Simple tokenization by word (keeping punctuation intact if possible, but matching purely on alphabetical characters)
+    # We'll use a regex to find all words
+    words = re.findall(r'\b[a-zA-Z]+\b', transcript)
+    
+    med_lower_map = {m.lower(): m for m in MEDICINES_LIST}
+    known_meds_lower = set(med_lower_map.keys())
+
+    for word in set(words):
+        word_lower = word.lower()
+        if len(word_lower) < 4:  # Skip very short words to avoid false positives
+            continue
+            
+        if word_lower not in known_meds_lower:
+            # Find best match
+            best_match = None
+            highest_score = 0
+            for med_lower in known_meds_lower:
+                score = fuzz.ratio(word_lower, med_lower)
+                if score > highest_score:
+                    highest_score = score
+                    best_match = med_lower
+                    
+            if highest_score > 80 and best_match:
+                # Replace the word in the transcript (case-insensitive replace for the specific word boundary)
+                pattern = r'\b' + re.escape(word) + r'\b'
+                # Preserve the case of the original replacement from MEDICINES_LIST
+                replacement = med_lower_map[best_match]
+                corrected_transcript = re.sub(pattern, replacement, corrected_transcript, flags=re.IGNORECASE)
+                
+    return transcript, corrected_transcript
 
 class VoiceService:
     def __init__(self):
@@ -25,7 +78,7 @@ class VoiceService:
         if not audio_bytes:
             return ""
 
-        # ── Method 1: Groq whisper-large-v3-turbo ─────────────────────────────
+        # ── Method 1: Groq whisper-large-v3 ─────────────────────────────
         # Groq exposes an OpenAI-compatible /audio/transcriptions endpoint.
         # Fastest option — typical latency ~300 ms for a short dictation clip.
         if self.groq_client:
@@ -33,16 +86,29 @@ class VoiceService:
                 audio_file = io.BytesIO(audio_bytes)
                 # Groq requires a filename with extension so it knows the codec
                 audio_file.name = f"dictation.{file_format}"
+                
+                # Build initial prompt from medicine list
+                prompt_str = ", ".join(MEDICINES_LIST) if MEDICINES_LIST else ""
+                
+                # Groq Whisper has a hard prompt limit of 896 characters
+                if len(prompt_str) > 850:
+                    prompt_str = prompt_str[:850].rsplit(',', 1)[0]
+                
                 transcript = self.groq_client.audio.transcriptions.create(
-                    model="whisper-large-v3-turbo",
+                    model="whisper-large-v3",
                     file=audio_file,
                     response_format="text",
                     language="en",
+                    prompt=prompt_str
                 )
                 # Groq returns plain text when response_format="text"
-                result = transcript if isinstance(transcript, str) else transcript.text
-                print(f"Groq Whisper transcription successful: {result[:80]}…")
-                return result.strip()
+                raw_result = transcript if isinstance(transcript, str) else transcript.text
+                
+                raw_result = raw_result.strip()
+                raw_tx, corrected_tx = correct_medicine_names(raw_result)
+                
+                print(f"Groq Whisper transcription successful: {corrected_tx[:80]}…")
+                return corrected_tx
             except Exception as e:
                 print(f"Groq Whisper transcription failed: {e}. Trying Gemini fallback…")
 

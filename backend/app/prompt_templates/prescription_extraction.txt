@@ -9,7 +9,7 @@ Prescription Dictation:
 Extract each medicine into a JSON list of objects matching this schema:
 - name: The exact name of the drug.
 - strength: Strength of the drug (e.g. "500mg", "10ml", "0.5%"). If not stated, set to null.
-- frequency: How often to take it (e.g. "Once daily", "Twice a day", "1-0-1", "Every 8 hours"). If not stated, set to null.
+- frequency: You MUST format this exactly as a dash-separated string "MORN-AFT-NIGHT" using 1s and 0s (e.g., "1-0-1" for morning and night, "1-1-1" for three times a day, "0-0-1" for night only). If they say "twice a day", assume "1-0-1" UNLESS they specify otherwise (e.g., "morning and afternoon" should be "1-1-0"). If they say "once daily", assume "1-0-0". If not stated, set to "0-0-0".
 - duration: Duration of the therapy (e.g. "5 days", "1 month"). If not stated, set to null.
 - instructions: Administration instructions (e.g. "Before food", "Take with water", "At bedtime"). If not stated, set to null.
 - warnings: Any warnings or safety precautions mentioned (e.g. "Do not drive", "Avoid alcohol"). If not stated, set to null.
