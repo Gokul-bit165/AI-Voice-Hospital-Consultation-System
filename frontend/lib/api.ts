@@ -51,6 +51,7 @@ export interface MedicalRecord {
   uploaded_by: string;
   uploaded_at: string;
   ocr_record?: OCRRecord | null;
+  file_available: boolean;
 }
 
 export interface OCRStructuredData {
@@ -287,6 +288,26 @@ export const api = {
     });
   },
 
+  getRecordViewUrl(recordId: string): string {
+    return `${API_BASE_URL}/records/${recordId}/view`;
+  },
+
+  async viewRecord(recordId: string): Promise<Blob> {
+    const token = typeof window !== "undefined" ? localStorage.getItem("access_token") : null;
+    const res = await fetch(`${API_BASE_URL}/records/${recordId}/view`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) {
+      let msg = "Failed to open document.";
+      try {
+        const err = await res.json();
+        if (err?.detail) msg = err.detail;
+      } catch {}
+      throw new Error(msg);
+    }
+    return res.blob();
+  },
+
   async runOCR(recordId: string): Promise<OCRRecord> {
     return fetchWithAuth(`${API_BASE_URL}/records/${recordId}/ocr`, {
       method: "POST",
@@ -392,5 +413,61 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(user),
     });
-  }
+  },
+
+  // ── Agent streaming ──────────────────────────────────────────────────────
+  async streamAgentQuery(
+    patientId: string,
+    question: string,
+    visitId: string | undefined,
+    callbacks: {
+      onThinking?: (msg: string) => void;
+      onToolCall?: (tool_name: string, tool_args: Record<string, any>, label: string) => void;
+      onObservation?: (tool_name: string, result: string, duration_ms: number, is_safety_relevant: boolean) => void;
+      onChunk?: (chunk: string) => void;
+      onDone?: (data: { is_grounded: boolean; has_safety_disclaimer: boolean; steps: any[]; tool_calls_made: string[] }) => void;
+      onError?: (msg: string) => void;
+    },
+    signal?: AbortSignal
+  ): Promise<void> {
+    const token = typeof window !== "undefined" ? localStorage.getItem("access_token") : null;
+    const res = await fetch(`${API_BASE_URL}/patients/${patientId}/agent-query`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ question, visit_id: visitId }),
+      signal,
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: "Agent request failed" }));
+      callbacks.onError?.(err.detail || "Agent request failed");
+      return;
+    }
+    const reader = res.body!.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+      for (const line of lines) {
+        if (!line.startsWith("data: ")) continue;
+        try {
+          const event = JSON.parse(line.slice(6));
+          switch (event.type) {
+            case "thinking":    callbacks.onThinking?.(event.message); break;
+            case "tool_call":   callbacks.onToolCall?.(event.tool_name, event.tool_args ?? {}, event.label ?? event.tool_name); break;
+            case "observation": callbacks.onObservation?.(event.tool_name, event.result ?? "", event.duration_ms ?? 0, event.is_safety_relevant ?? false); break;
+            case "final_answer_chunk": callbacks.onChunk?.(event.chunk ?? ""); break;
+            case "done":        callbacks.onDone?.({ is_grounded: event.is_grounded, has_safety_disclaimer: event.has_safety_disclaimer, steps: event.steps ?? [], tool_calls_made: event.tool_calls_made ?? [] }); break;
+            case "error":       callbacks.onError?.(event.message ?? "Unknown agent error"); break;
+          }
+        } catch { /* skip malformed lines */ }
+      }
+    }
+  },
 };

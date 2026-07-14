@@ -99,6 +99,7 @@ class MedicalRecordResponse(BaseModel):
     uploaded_by: str
     uploaded_at: datetime
     ocr_record: Optional[OCRRecordResponse] = None
+    file_available: bool = True
 
     class Config:
         from_attributes = True
@@ -224,3 +225,24 @@ class AuditLogResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+# ── Agent Query ──────────────────────────────────────────────────────────────
+
+class AgentQueryRequest(BaseModel):
+    question: str
+    visit_id: Optional[str] = None
+
+class AgentStep(BaseModel):
+    type: str                          # "tool_call" | "observation" | "error"
+    tool_name: Optional[str] = None
+    tool_args: Optional[dict] = None
+    result: Optional[str] = None
+    duration_ms: Optional[int] = None
+    is_safety_relevant: bool = False   # True when allergy/drug-check tools fire
+
+class AgentQueryResponse(BaseModel):
+    final_answer: str
+    steps: List[AgentStep] = []
+    tool_calls_made: List[str] = []
+    is_grounded: bool = False          # True if patient-specific tools were used
+    has_safety_disclaimer: bool = False # True if drug/allergy tools fired

@@ -1,13 +1,16 @@
+import json
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from typing import List
 
 from backend.app.core.deps import get_db_session, require_doctor
 from backend.app.models.models import Patient, Embedding, Conversation, Doctor
-from backend.app.schemas.schemas import RAGQueryRequest, RAGQueryResponse
+from backend.app.schemas.schemas import RAGQueryRequest, RAGQueryResponse, AgentQueryRequest
 from backend.app.services.rag import rag_service
 from backend.app.services.llm_client import llm_client
+from backend.app.services.agent import clinical_agent
 from backend.app.core.prompts import load_prompt_template
 
 router = APIRouter()
@@ -142,4 +145,44 @@ async def query_patient_rag(
     return RAGQueryResponse(
         answer=answer,
         cited_chunks=cited_chunks
+    )
+
+
+@router.post("/patients/{id}/agent-query")
+async def agent_query_stream(
+    id: str,
+    req: AgentQueryRequest,
+    db: AsyncSession = Depends(get_db_session),
+    current_user: Doctor = Depends(require_doctor)
+):
+    """
+    Streaming SSE endpoint for the agentic clinical assistant.
+    Emits events as they happen: tool_call → observation → final_answer_chunk → done.
+    Patient context is bound server-side; patient_id is never an LLM-controlled argument.
+    """
+    # Verify patient exists before starting agent
+    p_result = await db.execute(select(Patient).filter(Patient.id == id))
+    patient = p_result.scalars().first()
+    if not patient:
+        raise HTTPException(status_code=404, detail="Patient not found")
+
+    async def event_stream():
+        try:
+            async for event in clinical_agent.run_streaming(
+                question=req.question,
+                patient_id=id,
+                visit_id=req.visit_id,
+                db=db,
+            ):
+                yield f"data: {json.dumps(event)}\n\n"
+        except Exception as e:
+            yield f"data: {json.dumps({'type': 'error', 'message': str(e)[:300]})}\n\n"
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",  # Important: disables nginx buffering
+        },
     )

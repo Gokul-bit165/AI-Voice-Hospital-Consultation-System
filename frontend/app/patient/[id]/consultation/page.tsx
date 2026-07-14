@@ -6,21 +6,49 @@ import { useRouter, useSearchParams } from "next/navigation";
 import DashboardLayout from "@/components/DashboardLayout";
 import LiveCaption from "@/components/LiveCaption";
 import { api, Visit, Vitals, Medicine } from "@/lib/api";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import {
   ArrowLeft, Loader2, CheckCircle, Printer,
-  Mic, MicOff, Plus, Trash2, Pill, Activity, Stethoscope,
-  BookOpen, Send, Sparkles, ShieldCheck, Edit3, Heart,
-  Thermometer, Wind, FileText, Calendar, Clock, User,
-  Bell, HelpCircle, Search, Settings, MoreHorizontal,
-  ChevronDown, UserPlus, ShieldAlert, Maximize2, RefreshCw,
-  GripVertical, ClipboardList, History, AlertTriangle, Info
+  Mic, MicOff, Plus, Trash2, Pill, Activity,
+  BookOpen, Send, Sparkles, ShieldCheck, Heart,
+  FileText, Clock, Wrench, Eye, EyeOff, Copy, RotateCcw,
+  ChevronDown, ChevronRight, ShieldAlert, Maximize2,
+  GripVertical, History, AlertTriangle, Info, Brain, Zap, Square,
+  RefreshCw, MoreHorizontal
 } from "lucide-react";
 
-// ─── Local types ─────────────────────────────────────────────────────────────
-type RagMsg = { sender: "user" | "ai"; text: string; citations?: string[] };
+// ─── Agent types ──────────────────────────────────────────────────────────────
+type AgentStepUI = {
+  type: "tool_call" | "observation" | "error";
+  tool_name?: string;
+  tool_args?: Record<string, any>;
+  label?: string;
+  result?: string;
+  duration_ms?: number;
+  is_safety_relevant?: boolean;
+};
+type AgentMessage = {
+  id: string;
+  sender: "user" | "agent";
+  // User message
+  text?: string;
+  // Agent message
+  steps?: AgentStepUI[];
+  streamingText?: string;
+  finalText?: string;
+  isStreaming?: boolean;
+  isThinking?: boolean;
+  thinkingMsg?: string;
+  isGrounded?: boolean;
+  hasSafetyDisclaimer?: boolean;
+  tool_calls_made?: string[];
+  isError?: boolean;
+};
 type Tab = "vitals" | "rx" | "history";
 
 import { MEDICINES_LIST } from "@/lib/medicines";
+import { AgentMessageBubble } from "@/components/AgentMessageBubble";
 
 // Helper to parse frequency string like "1-0-1" or fallback
 const parseFrequency = (freqStr: string) => {
@@ -210,17 +238,66 @@ export default function ConsultationPage({
       .padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
   };
 
-  // ── RAG sidebar ───────────────────────────────────────────────────────────
-  const [ragQuery, setRagQuery] = useState("");
-  const [ragMessages, setRagMessages] = useState<RagMsg[]>([
+  // ── Agent sidebar ─────────────────────────────────────────────────────────
+  const [agentInput, setAgentInput] = useState("");
+  const [agentMessages, setAgentMessages] = useState<AgentMessage[]>([
     {
-      sender: "ai",
-      text: "Hello Dr. Jenkins 👋 I am the patient's RAG clinical assistant. How can I help you with this consultation?",
+      id: "welcome",
+      sender: "agent",
+      finalText: "Hello Dr. 👋 I'm your **AI Clinical Agent** — I reason step-by-step using your patient's live data. Ask me anything about this patient, a drug interaction, or their history.",
+      steps: [],
+      isGrounded: false,
     },
   ]);
-  const [ragLoading, setRagLoading] = useState(false);
-  const [summarizing, setSummarizing] = useState(false);
+  const [agentRunning, setAgentRunning] = useState(false);
+  const [seenFirstAgentAnswer, setSeenFirstAgentAnswer] = useState(false);
+  const [chatbotDictating, setChatbotDictating] = useState(false);
+  const chatbotRecognitionRef = useRef<any>(null);
+  const abortRef = useRef<AbortController | null>(null);
   const ragEndRef = useRef<HTMLDivElement>(null);
+
+  const cacheKey = `clinical_agent_chat_${patientId}`;
+
+  // Load agent messages cache and listen for updates from other tabs
+  useEffect(() => {
+    const cached = localStorage.getItem(cacheKey);
+    if (cached) {
+      try {
+        setAgentMessages(JSON.parse(cached));
+        setSeenFirstAgentAnswer(true);
+      } catch (e) {
+        console.error("Failed to parse cached agent messages", e);
+      }
+    }
+
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === cacheKey && e.newValue) {
+        try {
+          setAgentMessages(JSON.parse(e.newValue));
+          setSeenFirstAgentAnswer(true);
+        } catch (err) {
+          console.error("Failed to parse synced agent messages", err);
+        }
+      }
+    };
+    window.addEventListener("storage", handleStorageChange);
+    return () => {
+      window.removeEventListener("storage", handleStorageChange);
+    };
+  }, [cacheKey]);
+
+  // Save agent messages cache
+  useEffect(() => {
+    if (agentMessages.length > 1 || (agentMessages.length === 1 && agentMessages[0].id !== "welcome")) {
+      const cleanMsgs = agentMessages.map(m => ({
+        ...m,
+        isThinking: false,
+        isStreaming: false,
+        streamingText: undefined
+      }));
+      localStorage.setItem(cacheKey, JSON.stringify(cleanMsgs));
+    }
+  }, [agentMessages, cacheKey]);
 
   // ── Queries ──────────────────────────────────────────────────────────────
   const { data: patient } = useQuery({
@@ -256,7 +333,7 @@ export default function ConsultationPage({
 
   useEffect(() => {
     ragEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [ragMessages]);
+  }, [agentMessages]);
 
   // ─── Voice Dictation ──────────────────────────────────────────────────────
   const startDictation = async () => {
@@ -387,44 +464,149 @@ export default function ConsultationPage({
     handleTabChange("rx");
   };
 
-  // ─── RAG actions ──────────────────────────────────────────────────────────
-  const handleSummarize = async () => {
-    setSummarizing(true);
-    setRagMessages((prev) => [...prev, { sender: "user", text: "Summarize this patient's medical history." }]);
+  // ─── Agent actions ────────────────────────────────────────────────────────
+  const sendAgentMessage = async (question: string) => {
+    if (!question.trim() || agentRunning) return;
+
+    // Add user message
+    const userMsgId = crypto.randomUUID();
+    const agentMsgId = crypto.randomUUID();
+    setAgentMessages((prev) => [
+      ...prev,
+      { id: userMsgId, sender: "user", text: question },
+      { id: agentMsgId, sender: "agent", isThinking: true, thinkingMsg: "Reasoning about your question…", steps: [], isStreaming: false, streamingText: "" },
+    ]);
+    setAgentRunning(true);
+
+    const abort = new AbortController();
+    abortRef.current = abort;
+
+    const updateAgent = (patch: Partial<AgentMessage>) =>
+      setAgentMessages((prev) => prev.map((m) => (m.id === agentMsgId ? { ...m, ...patch } : m)));
+
     try {
-      const res = await api.queryRAG(
-        patientId,
-        "Summarize patient history, current allergies, recent visits, and active medications concisely.",
-        activeVisit?.id
+      await api.streamAgentQuery(
+        patientId, question, activeVisit?.id,
+        {
+          onThinking: (msg) => updateAgent({ isThinking: true, thinkingMsg: msg }),
+          onToolCall: (tool_name, tool_args, label) =>
+            setAgentMessages((prev) => prev.map((m) =>
+              m.id !== agentMsgId ? m : {
+                ...m,
+                isThinking: false,
+                steps: [...(m.steps ?? []), { type: "tool_call" as const, tool_name, tool_args, label }],
+              }
+            )),
+          onObservation: (tool_name, result, duration_ms, is_safety_relevant) =>
+            setAgentMessages((prev) => prev.map((m) => {
+              if (m.id !== agentMsgId) return m;
+              const steps = [...(m.steps ?? [])];
+              // Update the last tool_call step with observation
+              const lastToolIdx = [...steps].reverse().findIndex(s => s.type === "tool_call" && s.tool_name === tool_name);
+              const idx = lastToolIdx >= 0 ? steps.length - 1 - lastToolIdx : -1;
+              if (idx >= 0) {
+                steps[idx] = { ...steps[idx], result, duration_ms, is_safety_relevant };
+              } else {
+                steps.push({ type: "observation", tool_name, result, duration_ms, is_safety_relevant });
+              }
+              return { ...m, steps };
+            })),
+          onChunk: (chunk) =>
+            setAgentMessages((prev) => prev.map((m) =>
+              m.id === agentMsgId
+                ? { ...m, isThinking: false, isStreaming: true, streamingText: (m.streamingText ?? "") + chunk }
+                : m
+            )),
+          onDone: (data) => {
+            setSeenFirstAgentAnswer(true);
+            setAgentMessages((prev) => prev.map((m) =>
+              m.id === agentMsgId
+                ? { ...m, isStreaming: false, finalText: m.streamingText, streamingText: undefined,
+                    isGrounded: data.is_grounded, hasSafetyDisclaimer: data.has_safety_disclaimer,
+                    tool_calls_made: data.tool_calls_made }
+                : m
+            ));
+          },
+          onError: (msg) => updateAgent({ isError: true, finalText: `⚠️ ${msg}`, isThinking: false, isStreaming: false }),
+        },
+        abort.signal
       );
-      setRagMessages((prev) => [...prev, { sender: "ai", text: res.answer, citations: res.cited_chunks }]);
     } catch (err: any) {
-      setRagMessages((prev) => [...prev, { sender: "ai", text: "Could not summarize: " + err.message }]);
+      if (err.name !== "AbortError") {
+        updateAgent({ isError: true, finalText: `⚠️ ${err.message}`, isThinking: false, isStreaming: false });
+      }
     } finally {
-      setSummarizing(false);
+      setAgentRunning(false);
+      abortRef.current = null;
     }
   };
 
-  const handleRagQueryText = async (text: string) => {
-    setRagMessages((prev) => [...prev, { sender: "user", text }]);
-    setRagLoading(true);
+  const toggleChatbotDictation = () => {
+    if (chatbotDictating) {
+      chatbotRecognitionRef.current?.stop();
+      setChatbotDictating(false);
+      return;
+    }
+
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      alert("Speech recognition is not supported in this browser. Please use Google Chrome.");
+      return;
+    }
+
     try {
-      const res = await api.queryRAG(patientId, text, activeVisit?.id);
-      setRagMessages((prev) => [...prev, { sender: "ai", text: res.answer, citations: res.cited_chunks }]);
-    } catch (err: any) {
-      setRagMessages((prev) => [...prev, { sender: "ai", text: "Error: " + err.message }]);
-    } finally {
-      setRagLoading(false);
+      const rec = new SpeechRecognition();
+      rec.continuous = true;
+      rec.interimResults = true;
+      rec.lang = "en-US";
+
+      rec.onstart = () => {
+        setChatbotDictating(true);
+      };
+
+      rec.onresult = (event: any) => {
+        let transcript = "";
+        for (let i = 0; i < event.results.length; ++i) {
+          transcript += event.results[i][0].transcript;
+        }
+        setAgentInput(transcript);
+      };
+
+      rec.onerror = (e: any) => {
+        console.error("Chatbot speech recognition error:", e);
+        setChatbotDictating(false);
+      };
+
+      rec.onend = () => {
+        setChatbotDictating(false);
+      };
+
+      rec.start();
+      chatbotRecognitionRef.current = rec;
+    } catch (err) {
+      console.error("Failed to start chatbot SpeechRecognition:", err);
+      setChatbotDictating(false);
     }
   };
 
-  const handleRagSubmit = async (e: React.FormEvent) => {
+  const handleAgentSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!ragQuery.trim()) return;
-    const q = ragQuery;
-    setRagQuery("");
-    await handleRagQueryText(q);
+    if (!agentInput.trim()) return;
+    if (chatbotDictating) {
+      chatbotRecognitionRef.current?.stop();
+      setChatbotDictating(false);
+    }
+    const q = agentInput;
+    setAgentInput("");
+    sendAgentMessage(q);
   };
+
+  const stopAgent = () => {
+    abortRef.current?.abort();
+    setAgentRunning(false);
+  };
+
+  const copyMessage = (text: string) => navigator.clipboard.writeText(text);
 
   // ─── Print/Save helpers ───────────────────────────────────────────────────
   const handlePrint = async () => {
@@ -998,128 +1180,65 @@ export default function ConsultationPage({
           </div>
         </div>
 
-        {/* ══════ AI CLINICAL ASSISTANT & TIMELINE PANEL (Right Sidebar) ══════ */}
-        <div
-          className="flex-shrink-0 flex flex-col bg-white border-t lg:border-t-0 lg:border-l border-[#E5E7EB] min-h-[50vh] lg:h-full w-full lg:w-[var(--chat-width)] overflow-hidden"
-          style={{}}
-        >
-          {/* AI Clinical Assistant Chat Card */}
+        {/* ══════ AI CLINICAL AGENT PANEL ══════ */}
+        <div className="flex-shrink-0 flex flex-col bg-white border-t lg:border-t-0 lg:border-l border-[#E5E7EB] min-h-[50vh] lg:h-full w-full lg:w-[var(--chat-width)] overflow-hidden">
           <div className="flex-1 flex flex-col min-h-0 bg-white">
-            {/* Header */}
-            <div className="px-4 py-3.5 border-b border-[#E5E7EB] flex items-center justify-between bg-[#F8FAFC] flex-shrink-0">
+
+            {/* ── Header ── */}
+            <div className="px-4 py-3 border-b border-[#E5E7EB] flex items-center justify-between bg-gradient-to-r from-[#EFF6FF] to-[#F8FAFC] flex-shrink-0">
               <div className="flex items-center gap-2">
-                <div className="p-1.5 rounded-lg bg-blue-50 border border-blue-100">
-                  <BookOpen className="h-4 w-4 text-[#2563EB]" />
+                <div className="p-1.5 rounded-lg bg-[#2563EB] shadow-sm">
+                  <Brain className="h-3.5 w-3.5 text-white" />
                 </div>
-                <span className="text-xs font-bold uppercase tracking-wider text-[#111827]">
-                  AI Clinical Assistant
-                </span>
+                <div>
+                  <span className="text-xs font-bold text-[#111827] block leading-tight">AI Clinical Agent</span>
+                  <span className="text-[9px] text-[#6B7280] font-medium">Multi-tool · RAG · Safety-aware</span>
+                </div>
               </div>
-              <div className="flex gap-2">
-                <Maximize2 className="h-3.5 w-3.5 text-[#6B7280] hover:text-[#111827] cursor-pointer transition-colors" />
-                <Settings className="h-3.5 w-3.5 text-[#6B7280] hover:text-[#111827] cursor-pointer transition-colors" />
+              <div className="flex items-center gap-1.5">
+                {agentRunning && (
+                  <span className="flex items-center gap-1 text-[9px] text-[#2563EB] font-bold bg-blue-50 border border-blue-100 px-2 py-0.5 rounded-full">
+                    <span className="h-1.5 w-1.5 rounded-full bg-[#2563EB] animate-pulse inline-block" />
+                    RUNNING
+                  </span>
+                )}
+                <Maximize2
+                  onClick={() => window.open(`/patient/${patientId}/chat?visitId=${activeVisit?.id || ""}`, "_blank")}
+                  className="h-3.5 w-3.5 text-[#6B7280] hover:text-[#111827] cursor-pointer transition-colors"
+                />
               </div>
             </div>
 
-            {/* Conversation Space */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-white min-h-0">
-              {ragMessages.map((msg, i) => {
-                const isAi = msg.sender === "ai";
-                const classification = isAi ? classifyMessage(msg.text) : null;
-                const Icon = classification ? classification.icon : Info;
-                
-                return (
-                  <div key={i} className={`flex flex-col ${isAi ? "items-start" : "items-end"}`}>
-                    <div className="flex items-center gap-1.5 mb-1 text-[10px] text-[#6B7280] font-semibold uppercase">
-                      {isAi ? (
-                        <>
-                          <Icon className={`h-3 w-3 ${classification?.iconColor}`} />
-                          <span className={`px-1.5 py-0.5 rounded ${classification?.chip}`}>
-                            {classification?.key}
-                          </span>
-                        </>
-                      ) : (
-                        <span>You</span>
-                      )}
-                    </div>
-                    <div
-                      className={`px-3.5 py-2.5 rounded-2xl max-w-[90%] leading-relaxed text-xs shadow-sm ${
-                        msg.sender === "ai" ? classification?.bubble : ""
-                      }`}
-                      style={
-                        msg.sender === "user"
-                          ? { background: "#2563EB", color: "white", borderBottomRightRadius: 4 }
-                          : { borderBottomLeftRadius: 4 }
-                      }
-                    >
-                      {msg.text}
-                      
-                      {/* Suggested Medicine Actions */}
-                      {isAi && (
-                        <div className="mt-2.5 flex flex-wrap gap-2 pt-2 border-t border-slate-200/50">
-                          {msg.text.includes("Azithromycin") && (
-                            <button
-                              type="button"
-                              onClick={() => addSuggestedMedicine("Azithromycin", "500 mg")}
-                              className="px-2 py-1 bg-white border border-[#E5E7EB] hover:bg-blue-50 text-[10px] font-bold text-[#2563EB] rounded-lg inline-flex items-center gap-1 active:scale-95 transition-all cursor-pointer"
-                            >
-                              <Plus className="h-3 w-3" /> Add Azithromycin 500mg
-                            </button>
-                          )}
-                          {msg.text.includes("Clindamycin") && (
-                            <button
-                              type="button"
-                              onClick={() => addSuggestedMedicine("Clindamycin", "300 mg")}
-                              className="px-2 py-1 bg-white border border-[#E5E7EB] hover:bg-blue-50 text-[10px] font-bold text-[#2563EB] rounded-lg inline-flex items-center gap-1 active:scale-95 transition-all cursor-pointer"
-                            >
-                              <Plus className="h-3 w-3" /> Add Clindamycin 300mg
-                            </button>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                    
-                    {msg.citations && msg.citations.length > 0 && (
-                      <div className="mt-1.5 p-2.5 rounded-xl text-[10px] text-[#6B7280] bg-[#F8FAFC] border border-[#E5E7EB] leading-relaxed max-w-[95%]">
-                        <span className="font-bold text-[#111827] uppercase tracking-wider text-[8px] block mb-1">
-                          Grounded Citations
-                        </span>
-                        {msg.citations.map((c, j) => (
-                          <p key={j} className="border-t border-[#E5E7EB] pt-1 mt-1 first:border-0 first:mt-0 first:pt-0">
-                            {c}
-                          </p>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-              {(ragLoading || summarizing) && (
-                <div className="flex items-center gap-2 text-[#6B7280] font-semibold text-[10px]">
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  <span>SEARCHING CLINICAL HISTORY...</span>
-                </div>
-              )}
+            {/* ── Messages ── */}
+            <div className="flex-1 overflow-y-auto p-3 space-y-4 bg-[#F8FAFC]/30 min-h-0">
+              {agentMessages.map((msg) => (
+                <AgentMessageBubble
+                  key={msg.id}
+                  msg={msg}
+                  seenFirst={seenFirstAgentAnswer}
+                  onCopy={copyMessage}
+                  onResend={() => msg.text && sendAgentMessage(msg.text)}
+                  onAddMed={addSuggestedMedicine}
+                />
+              ))}
               <div ref={ragEndRef} />
             </div>
 
-            {/* Quick Actions */}
-            <div className="px-4 py-2 border-t border-[#E5E7EB] bg-[#F8FAFC]/50 flex-shrink-0">
-              <span className="text-[8px] font-bold text-[#6B7280] uppercase tracking-wider block mb-1.5">
-                Clinical Queries
-              </span>
-              <div className="grid grid-cols-2 gap-2">
+            {/* ── Quick Actions ── */}
+            <div className="px-3 py-2 border-t border-[#E5E7EB] bg-white flex-shrink-0">
+              <span className="text-[8px] font-bold text-[#6B7280] uppercase tracking-widest block mb-1.5">Quick Agent Queries</span>
+              <div className="grid grid-cols-2 gap-1.5">
                 {[
-                  { label: "Summarize History", action: () => handleSummarize() },
-                  { label: "Review Allergies", action: () => handleRagQueryText("What allergies does this patient have?") },
-                  { label: "Suggest Medicines", action: () => handleRagQueryText("Suggest non-penicillin alternative medicines for acute tonsillitis.") },
-                  { label: "Check Interactions", action: () => handleRagQueryText("Check interactions for amoxicillin with allergies.") },
-                ].map((btn, index) => (
+                  { label: "📋 Summarize History", q: "Summarize this patient's complete medical history, allergies, recent visits and current medications." },
+                  { label: "🔬 Review Allergies",  q: "What allergies does this patient have? Are there any current medications that conflict?" },
+                  { label: "💊 Suggest Medicines", q: "Suggest safe non-penicillin alternatives for acute tonsillitis given this patient's allergy profile." },
+                  { label: "⚠️ Drug Safety Check", q: "Check if Amoxicillin is safe to prescribe for this patient given their declared allergies." },
+                ].map((btn) => (
                   <button
-                    key={index}
-                    onClick={btn.action}
-                    disabled={ragLoading || summarizing}
-                    className="py-1.5 px-2 bg-white hover:bg-slate-55 border border-[#E5E7EB] text-[#6B7280] hover:text-[#111827] rounded-lg text-[9px] font-semibold transition-all text-left truncate cursor-pointer active:scale-95 disabled:opacity-50"
+                    key={btn.label}
+                    onClick={() => sendAgentMessage(btn.q)}
+                    disabled={agentRunning}
+                    className="py-1.5 px-2 bg-[#F8FAFC] hover:bg-blue-50 border border-[#E5E7EB] hover:border-blue-200 text-[#6B7280] hover:text-[#2563EB] rounded-lg text-[9px] font-semibold transition-all text-left cursor-pointer active:scale-95 disabled:opacity-40 leading-tight"
                   >
                     {btn.label}
                   </button>
@@ -1127,22 +1246,42 @@ export default function ConsultationPage({
               </div>
             </div>
 
-            {/* Input Form */}
-            <form onSubmit={handleRagSubmit} className="flex gap-2 p-3 border-t border-[#E5E7EB] bg-white flex-shrink-0">
-              <input
-                type="text"
-                value={ragQuery}
-                onChange={(e) => setRagQuery(e.target.value)}
-                placeholder="Ask clinical assistant..."
-                className="flex-1 px-3 py-2 rounded-xl text-xs bg-[#F8FAFC] border border-[#E5E7EB] text-[#111827] placeholder-[#6B7280] focus:outline-none focus:border-[#2563EB] focus:ring-1 focus:ring-[#2563EB] transition-colors"
-              />
-              <button
-                type="submit"
-                disabled={ragLoading || summarizing}
-                className="p-2 bg-[#2563EB] hover:bg-blue-700 rounded-xl text-white transition-all cursor-pointer active:scale-95 disabled:opacity-50 flex items-center justify-center shadow-sm"
-              >
-                <Send className="h-4.5 w-4.5" />
-              </button>
+            {/* ── Input ── */}
+            <form onSubmit={handleAgentSubmit} className="flex gap-2 p-3 border-t border-[#E5E7EB] bg-white flex-shrink-0 items-center">
+              <div className="relative flex-1 flex items-center">
+                <input
+                  type="text"
+                  value={agentInput}
+                  onChange={(e) => setAgentInput(e.target.value)}
+                  placeholder="Ask the clinical agent…"
+                  disabled={agentRunning || chatbotDictating}
+                  className="w-full pl-3 pr-9 py-2 rounded-xl text-xs bg-[#F8FAFC] border border-[#E5E7EB] text-[#111827] placeholder-[#9CA3AF] focus:outline-none focus:border-[#2563EB] focus:ring-1 focus:ring-[#2563EB] transition-colors disabled:opacity-60"
+                />
+                <button
+                  type="button"
+                  onClick={toggleChatbotDictation}
+                  disabled={agentRunning}
+                  className={`absolute right-2.5 p-1 rounded-lg transition-all cursor-pointer ${
+                    chatbotDictating
+                      ? "text-[#DC2626] bg-red-50 animate-pulse hover:bg-red-100"
+                      : "text-[#6B7280] hover:text-[#111827] hover:bg-slate-100"
+                  }`}
+                  title={chatbotDictating ? "Stop Voice Input" : "Start Voice Input"}
+                >
+                  {chatbotDictating ? <MicOff className="h-3.5 w-3.5" /> : <Mic className="h-3.5 w-3.5" />}
+                </button>
+              </div>
+              {agentRunning ? (
+                <button type="button" onClick={stopAgent}
+                  className="p-2 bg-[#DC2626] hover:bg-red-700 rounded-xl text-white transition-all cursor-pointer active:scale-95 flex items-center justify-center shadow-sm">
+                  <Square className="h-4 w-4 fill-white" />
+                </button>
+              ) : (
+                <button type="submit" disabled={!agentInput.trim() || chatbotDictating}
+                  className="p-2 bg-[#2563EB] hover:bg-blue-700 rounded-xl text-white transition-all cursor-pointer active:scale-95 disabled:opacity-40 flex items-center justify-center shadow-sm">
+                  <Send className="h-4 w-4" />
+                </button>
+              )}
             </form>
           </div>
         </div>

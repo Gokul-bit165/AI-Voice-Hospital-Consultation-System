@@ -4,7 +4,7 @@ import React, { use } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import DashboardLayout from "@/components/DashboardLayout";
-import { ArrowLeft, Calendar, Phone, Heart, ShieldAlert, FileText, ChevronRight, Play, Upload, Clock, UserPlus, Loader2 } from "lucide-react";
+import { ArrowLeft, Calendar, Phone, Heart, ShieldAlert, FileText, ChevronRight, Play, Upload, Clock, UserPlus, Loader2, Eye } from "lucide-react";
 
 export default function PatientProfilePage({ params: paramsPromise }: { params: Promise<{ id: string }> }) {
   const params = use(paramsPromise);
@@ -27,6 +27,19 @@ export default function PatientProfilePage({ params: paramsPromise }: { params: 
     queryKey: ["patient-timeline", patientId],
     queryFn: () => api.getPatientTimeline(patientId),
   });
+
+  const handleViewDocument = async (recordId: string, filename: string) => {
+    try {
+      const blob = await api.viewRecord(recordId);
+      const url = URL.createObjectURL(blob);
+      const win = window.open(url, "_blank");
+      // Revoke object URL after a short delay to free memory
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+      if (!win) alert("Please allow pop-ups to view documents.");
+    } catch (err: any) {
+      alert(err?.message || "Failed to open document. Please try again.");
+    }
+  };
 
   const getAge = (dobString: string) => {
     if (!dobString) return "N/A";
@@ -181,7 +194,21 @@ export default function PatientProfilePage({ params: paramsPromise }: { params: 
                           </div>
                         </div>
                         
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap justify-end">
+                          {rec.file_available ? (
+                            <button
+                              onClick={() => handleViewDocument(rec.id, rec.original_filename)}
+                              className="inline-flex items-center gap-1 text-[10px] text-[#2563EB] hover:bg-blue-50 border border-blue-100 px-2 py-1 rounded-lg font-bold cursor-pointer transition-colors"
+                              title="Open document in new tab"
+                            >
+                              <Eye className="h-3 w-3" />
+                              View
+                            </button>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 text-[9px] text-[#DC2626] bg-red-50 border border-red-100 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider" title="File no longer on disk. Please re-upload.">
+                              ⚠ File Missing
+                            </span>
+                          )}
                           {rec.ocr_record ? (
                             <span className="bg-emerald-50 border border-emerald-100 text-[#16A34A] text-[9px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">
                               OCR Sync ({rec.ocr_record.ocr_engine_used})

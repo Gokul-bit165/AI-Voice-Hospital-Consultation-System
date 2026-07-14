@@ -4,6 +4,7 @@ import shutil
 from typing import List
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
+from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
@@ -97,7 +98,58 @@ async def list_medical_records(
     stmt = select(MedicalRecord).filter(MedicalRecord.patient_id == patient_id).options(selectinload(MedicalRecord.ocr_record)).order_by(MedicalRecord.uploaded_at.desc())
     result = await db.execute(stmt)
     records = result.scalars().all()
-    return records
+
+    # Enrich each record with disk availability
+    response = []
+    for rec in records:
+        abs_path = os.path.join(settings.STORAGE_DIR, rec.file_path)
+        rec_dict = {
+            "id": rec.id,
+            "patient_id": rec.patient_id,
+            "file_path": rec.file_path,
+            "file_type": rec.file_type,
+            "original_filename": rec.original_filename,
+            "uploaded_by": rec.uploaded_by,
+            "uploaded_at": rec.uploaded_at,
+            "ocr_record": rec.ocr_record,
+            "file_available": os.path.exists(abs_path),
+        }
+        response.append(rec_dict)
+    return response
+
+@router.get("/records/{id}/view")
+async def view_medical_record(
+    id: str,
+    db: AsyncSession = Depends(get_db_session),
+    current_user: Doctor = Depends(require_any_role)
+):
+    result = await db.execute(select(MedicalRecord).filter(MedicalRecord.id == id))
+    record = result.scalars().first()
+    if not record:
+        raise HTTPException(status_code=404, detail="Medical record not found")
+
+    abs_path = os.path.join(settings.STORAGE_DIR, record.file_path)
+    if not os.path.exists(abs_path):
+        raise HTTPException(status_code=410, detail="File no longer available on disk. Please re-upload this document.")
+
+    # Determine media type for inline viewing
+    ext = os.path.splitext(record.original_filename)[1].lower()
+    media_type_map = {
+        ".pdf": "application/pdf",
+        ".png": "image/png",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".tiff": "image/tiff",
+        ".bmp": "image/bmp",
+    }
+    media_type = media_type_map.get(ext, "application/octet-stream")
+
+    return FileResponse(
+        path=abs_path,
+        media_type=media_type,
+        filename=record.original_filename,
+        headers={"Content-Disposition": f"inline; filename=\"{record.original_filename}\""}
+    )
 
 @router.delete("/records/{id}")
 async def delete_medical_record(

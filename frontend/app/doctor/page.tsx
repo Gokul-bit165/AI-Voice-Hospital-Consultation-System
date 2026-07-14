@@ -4,12 +4,15 @@ import React, { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import DashboardLayout from "@/components/DashboardLayout";
-import { Search, User, Clipboard, Play, CheckCircle2, History, ChevronRight, Loader2 } from "lucide-react";
+import { Search, User, Clipboard, Play, CheckCircle2, History, ChevronRight, Loader2, Users, Clock, Sparkles, ClipboardList } from "lucide-react";
 
 export default function DoctorDashboard() {
   const [searchQuery, setSearchQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [selectedPatientId, setSelectedPatientId] = useState<string | null>(null);
+  
+  // Custom shake state
+  const [shouldShake, setShouldShake] = useState(false);
 
   useEffect(() => {
     const handler = setTimeout(() => {
@@ -17,6 +20,16 @@ export default function DoctorDashboard() {
     }, 300);
     return () => clearTimeout(handler);
   }, [searchQuery]);
+
+  // Nudge shake listener
+  useEffect(() => {
+    const handleNudge = () => {
+      setShouldShake(true);
+      setTimeout(() => setShouldShake(false), 500);
+    };
+    window.addEventListener("nudge-patient-queue", handleNudge);
+    return () => window.removeEventListener("nudge-patient-queue", handleNudge);
+  }, []);
 
   // Query patient list
   const { data: patients = [], isLoading } = useQuery({
@@ -36,7 +49,9 @@ export default function DoctorDashboard() {
       <div className="h-full w-full p-4 sm:p-6 grid grid-cols-1 lg:grid-cols-12 gap-6 overflow-y-auto pb-24">
         
         {/* Left column: Patient Queue / List */}
-        <div className="lg:col-span-5 bg-white border border-[#E5E7EB] rounded-2xl p-5 flex flex-col shadow-sm h-fit max-h-[80vh]">
+        <div className={`lg:col-span-5 bg-white border border-[#E5E7EB] rounded-2xl p-5 flex flex-col shadow-sm h-fit max-h-[80vh] transition-all ${
+          shouldShake ? "animate-shake ring-2 ring-amber-400" : ""
+        }`}>
           <div className="mb-4">
             <h2 className="text-base font-bold text-[#111827]">Doctor's Patient Queue</h2>
             <p className="text-xs text-[#6B7280] mt-0.5">Select a patient to review profile or begin a voice consultation</p>
@@ -57,8 +72,18 @@ export default function DoctorDashboard() {
 
           <div className="flex-1 overflow-y-auto space-y-2 pr-1">
             {isLoading ? (
-              <div className="text-center py-10">
-                <Loader2 className="h-6 w-6 animate-spin text-[#2563EB] mx-auto" />
+              <div className="space-y-2.5 animate-pulse">
+                {[1, 2, 3, 4].map((n) => (
+                  <div key={n} className="p-3 border border-slate-100 rounded-xl flex items-center justify-between bg-white">
+                    <div className="flex items-center gap-3 w-full">
+                      <div className="bg-slate-150 h-9 w-9 rounded-xl shrink-0" />
+                      <div className="space-y-2 w-1/2">
+                        <div className="h-3 bg-slate-200 rounded w-3/4" />
+                        <div className="h-2 bg-slate-100 rounded w-1/2" />
+                      </div>
+                    </div>
+                  </div>
+                ))}
               </div>
             ) : patients.length === 0 ? (
               <p className="text-xs text-[#6B7280] text-center py-6">No patient records found.</p>
@@ -92,7 +117,7 @@ export default function DoctorDashboard() {
         {/* Right column: Patient Card & Consulting Start options */}
         <div className="lg:col-span-7">
           {selectedPatient ? (
-            <div className="bg-white border border-[#E5E7EB] rounded-2xl p-6 shadow-sm space-y-6">
+            <div className="bg-white border border-[#E5E7EB] rounded-2xl p-6 shadow-sm space-y-6 animate-fade-in">
               <div className="flex items-start justify-between border-b border-[#E5E7EB] pb-4">
                 <div>
                   <h3 className="text-lg font-bold text-[#111827]">{selectedPatient.full_name}</h3>
@@ -146,15 +171,162 @@ export default function DoctorDashboard() {
               </div>
             </div>
           ) : (
-            <div className="h-full min-h-[40vh] bg-white border border-dashed border-[#E5E7EB] rounded-2xl flex flex-col items-center justify-center p-6 text-center text-[#6B7280] shadow-sm">
-              <Clipboard className="h-10 w-10 text-slate-350 mb-3" />
-              <p className="text-xs font-bold uppercase tracking-wider text-[#111827]">Select Patient for Consultation</p>
-              <p className="text-xs text-[#6B7280] mt-1">Choose a patient from your queue on the left to start consulting.</p>
+            <div className="bg-white border border-[#E5E7EB] rounded-2xl p-6 shadow-sm space-y-6 animate-fade-in">
+              {/* Welcome banner */}
+              <div className="bg-gradient-to-r from-blue-50/50 to-indigo-50/30 border border-blue-100/50 rounded-2xl p-5 relative overflow-hidden">
+                <div className="relative z-10 space-y-1">
+                  <span className="text-[10px] font-bold text-[#2563EB] bg-blue-100/80 px-2 py-0.5 rounded-full uppercase tracking-wider">
+                    Portal Active
+                  </span>
+                  <h3 className="text-base font-bold text-slate-900 pt-1">Welcome back, Dr. Sarah Jenkins 🩺</h3>
+                  <p className="text-xs text-slate-500 max-w-lg leading-relaxed mt-1">
+                    MetroVoice AI is ready. Select a patient from the queue to review profile metrics, run drug safety checks, or record a live consultation.
+                  </p>
+                </div>
+                <div className="absolute right-4 bottom-0 opacity-10 pointer-events-none">
+                  <User className="h-32 w-32 text-blue-900" />
+                </div>
+              </div>
+
+              {/* Responsive Stats Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                {isLoading ? (
+                  [1, 2, 3, 4].map((n) => (
+                    <div key={n} className="border border-slate-100 bg-[#F8FAFC]/30 rounded-xl p-4 flex flex-col justify-between animate-pulse">
+                      <div className="flex items-start justify-between">
+                        <div className="h-3 bg-slate-200 rounded w-2/3" />
+                        <div className="h-6 w-6 bg-slate-150 rounded" />
+                      </div>
+                      <div className="mt-4 space-y-1">
+                        <div className="h-5 bg-slate-200 rounded w-1/2" />
+                        <div className="h-2.5 bg-slate-100 rounded w-3/4" />
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  [
+                    {
+                      label: "Patients Waiting",
+                      value: patients.length,
+                      icon: Users,
+                      color: "text-blue-600 bg-blue-50 border-blue-100",
+                      description: "Active in clinic queue"
+                    },
+                    {
+                      label: "Prescriptions Issued",
+                      value: "14", // TODO: Replace with live query of today's prescriptions
+                      icon: CheckCircle2,
+                      color: "text-emerald-600 bg-emerald-50 border-emerald-100",
+                      description: "Finalized today"
+                    },
+                    {
+                      label: "OCR Records Logged",
+                      value: "12", // TODO: Replace with live query of patient documents
+                      icon: Clipboard,
+                      color: "text-amber-600 bg-amber-50 border-amber-100",
+                      description: "Scanned files processed"
+                    },
+                    {
+                      label: "Avg. Session Length",
+                      value: "6m 45s", // TODO: Replace with live query of consultation average durations
+                      icon: Clock,
+                      color: "text-purple-600 bg-purple-50 border-purple-100",
+                      description: "Per voice dictation"
+                    }
+                  ].map((stat, idx) => {
+                    const StatIcon = stat.icon;
+                    return (
+                      <div key={idx} className="border border-[#E5E7EB] bg-[#F8FAFC]/50 rounded-xl p-4 flex flex-col justify-between hover:shadow-sm transition-all">
+                        <div className="flex items-start justify-between">
+                          <span className="text-[10px] font-bold text-[#6B7280] uppercase tracking-wider leading-tight">{stat.label}</span>
+                          <div className={`p-1.5 rounded-lg border ${stat.color}`}>
+                            <StatIcon className="h-4 w-4" />
+                          </div>
+                        </div>
+                        <div className="mt-3">
+                          <span className="text-xl font-bold text-[#111827] tracking-tight">{stat.value}</span>
+                          <span className="text-[9px] text-[#6B7280] block mt-0.5 font-medium">{stat.description}</span>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              {/* Bottom split grid: Quick guide & Checklist */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5 pt-2">
+                {/* Voice Dictation Quick Guide */}
+                <div className="border border-[#E5E7EB] rounded-2xl p-5 space-y-4">
+                  <div className="flex items-center gap-2">
+                    <div className="p-1.5 rounded-lg bg-blue-50 border border-blue-100">
+                      <Sparkles className="h-4 w-4 text-[#2563EB]" />
+                    </div>
+                    <span className="text-xs font-bold text-slate-800 uppercase tracking-wider">Voice consultation room guide</span>
+                  </div>
+                  <div className="space-y-3 text-xs">
+                    {[
+                      { step: "1", title: "Select a patient", desc: "Choose a patient from the waiting queue on the left side panel." },
+                      { step: "2", title: "Record dictation", desc: "Click 'Start Live Voice Consultation' and speak vitals, diagnoses, and medicines." },
+                      { step: "3", title: "Review AI SOAP", desc: "Let the AI parse the audio transcript, analyze drug safety conflicts, and generate prescription drafts." }
+                    ].map((step) => (
+                      <div key={step.step} className="flex gap-3">
+                        <span className="h-5 w-5 rounded-full bg-blue-50 text-[#2563EB] border border-blue-100 flex items-center justify-center font-bold text-[10px] shrink-0 mt-0.5">
+                          {step.step}
+                        </span>
+                        <div>
+                          <p className="font-bold text-slate-800">{step.title}</p>
+                          <p className="text-slate-500 text-[11px] mt-0.5 leading-relaxed">{step.desc}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Priority Clinical Reminders */}
+                <div className="border border-[#E5E7EB] rounded-2xl p-5 space-y-4 flex flex-col justify-between">
+                  <div>
+                    <div className="flex items-center gap-2 mb-3">
+                      <div className="p-1.5 rounded-lg bg-amber-50 border border-amber-100">
+                        <ClipboardList className="h-4 w-4 text-[#F59E0B]" />
+                      </div>
+                      <span className="text-xs font-bold text-slate-800 uppercase tracking-wider font-semibold">Priority reminders checklist</span>
+                    </div>
+                    <div className="space-y-2.5 text-xs">
+                      {[
+                        "Verify Penicillin allergy warnings before prescription writing",
+                        "Approve pending scanned document OCR reports",
+                        "Synchronize consultation audio logs with database",
+                        "Review cardiology clinic queue status"
+                      ].map((item, index) => (
+                        <div key={index} className="flex items-start gap-2.5">
+                          <input type="checkbox" defaultChecked={index === 3} className="mt-0.5 accent-[#2563EB]" />
+                          <span className={`text-[11px] leading-tight ${index === 3 ? "line-through text-slate-400 font-normal" : "text-slate-600 font-medium"}`}>{item}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="text-[10px] text-slate-400 font-medium border-t border-slate-100 pt-3">
+                    📋 Checklist resets automatically at midnight
+                  </div>
+                </div>
+              </div>
             </div>
           )}
         </div>
 
       </div>
+
+      {/* Visual nudge animation */}
+      <style>{`
+        @keyframes shake {
+          0%, 100% { transform: translateX(0); }
+          20%, 60% { transform: translateX(-6px); }
+          40%, 80% { transform: translateX(6px); }
+        }
+        .animate-shake {
+          animation: shake 0.3s ease-in-out;
+        }
+      `}</style>
     </DashboardLayout>
   );
 }

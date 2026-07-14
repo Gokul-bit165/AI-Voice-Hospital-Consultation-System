@@ -63,3 +63,54 @@ body {
   backdrop-filter: blur(8px);
   border: 1px solid rgba(226, 232, 240, 0.8);
 }
+
+/* ── Agent markdown prose ── */
+.agent-markdown { font-size: 11px; line-height: 1.65; }
+.agent-markdown p { margin: 0 0 0.5em; }
+.agent-markdown p:last-child { margin-bottom: 0; }
+.agent-markdown strong { font-weight: 700; color: #111827; }
+.agent-markdown em { font-style: italic; }
+.agent-markdown h1,.agent-markdown h2,.agent-markdown h3 {
+  font-weight: 700; margin: 0.6em 0 0.3em; color: #111827; line-height: 1.3;
+}
+.agent-markdown h1 { font-size: 13px; }
+.agent-markdown h2 { font-size: 12px; }
+.agent-markdown h3 { font-size: 11px; }
+.agent-markdown ul,.agent-markdown ol { margin: 0.4em 0 0.4em 1.2em; padding: 0; }
+.agent-markdown li { margin-bottom: 0.2em; }
+.agent-markdown code {
+  font-family: ui-monospace, monospace;
+  font-size: 10px;
+  background: #F1F5F9;
+  border: 1px solid #E2E8F0;
+  border-radius: 3px;
+  padding: 0 3px;
+  color: #1e40af;
+}
+.agent-markdown pre {
+  background: #F1F5F9;
+  border: 1px solid #E2E8F0;
+  border-radius: 6px;
+  padding: 8px;
+  overflow-x: auto;
+  margin: 0.5em 0;
+}
+.agent-markdown pre code { background: none; border: none; padding: 0; color: inherit; }
+.agent-markdown blockquote {
+  border-left: 3px solid #BFDBFE;
+  margin: 0.5em 0;
+  padding: 0.2em 0.8em;
+  color: #4B5563;
+  background: #EFF6FF;
+  border-radius: 0 4px 4px 0;
+}
+.agent-markdown hr {
+  border: none;
+  border-top: 1px solid #E5E7EB;
+  margin: 0.6em 0;
+}
+.agent-markdown table { border-collapse: collapse; width: 100%; font-size: 10px; }
+.agent-markdown th,.agent-markdown td {
+  border: 1px solid #E5E7EB; padding: 4px 8px; text-align: left;
+}
+.agent-markdown th { background: #F8FAFC; font-weight: 700; }

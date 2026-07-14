@@ -42,6 +42,30 @@ function DashboardLayoutContent({ children, vitals, setVitals, timeline }: Dashb
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [mounted, setMounted] = useState(false);
 
+  // Notifications State
+  interface NotificationItem {
+    id: string;
+    patientId?: string;
+    patientName?: string;
+    message: string;
+    time: string;
+    isRead: boolean;
+    type: "allergy" | "upload" | "sync" | "info";
+    targetPath?: string;
+  }
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [showNotifications, setShowNotifications] = useState(false);
+  
+  // Toast State
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => {
+      setToastMessage((prev) => (prev === msg ? null : prev));
+    }, 3000);
+  };
+
   // Sync collapsed state with localStorage
   useEffect(() => {
     setMounted(true);
@@ -64,6 +88,60 @@ function DashboardLayoutContent({ children, vitals, setVitals, timeline }: Dashb
       });
   }, []);
 
+  // Dynamically load notifications based on active patients list
+  useEffect(() => {
+    if (user?.role === "Doctor") {
+      api.searchPatients("", "name")
+        .then((patientList) => {
+          const list: NotificationItem[] = [];
+          if (patientList && patientList.length > 0) {
+            const first = patientList[0];
+            const second = patientList[1];
+            const third = patientList[2];
+
+            if (first) {
+              list.push({
+                id: "notif-1",
+                patientId: first.id,
+                patientName: first.full_name,
+                message: `New scanned document uploaded for ${first.full_name}.`,
+                time: "5m ago",
+                isRead: false,
+                type: "upload",
+                targetPath: `/patient/${first.id}/upload`
+              });
+            }
+            if (second) {
+              list.push({
+                id: "notif-2",
+                patientId: second.id,
+                patientName: second.full_name,
+                message: `${second.full_name} has moderate Penicillin allergy risk declared.`,
+                time: "1h ago",
+                isRead: false,
+                type: "allergy",
+                targetPath: `/patient/${second.id}`
+              });
+            }
+            if (third) {
+              list.push({
+                id: "notif-3",
+                patientId: third.id,
+                patientName: third.full_name,
+                message: `Consultation draft synchronized for ${third.full_name}.`,
+                time: "4h ago",
+                isRead: false,
+                type: "sync",
+                targetPath: `/patient/${third.id}/consultation`
+              });
+            }
+          }
+          setNotifications(list);
+        })
+        .catch(console.error);
+    }
+  }, [user]);
+
   const handleToggleSidebar = () => {
     const nextState = !isCollapsed;
     setIsCollapsed(nextState);
@@ -77,15 +155,14 @@ function DashboardLayoutContent({ children, vitals, setVitals, timeline }: Dashb
     router.push("/login");
   };
 
-  if (!mounted) {
-    return (
-      <div className="min-h-screen bg-[#F8FAFC] flex items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-[#2563EB]" />
-      </div>
-    );
-  }
+  const handleDisabledClick = (label: string) => {
+    showToast(`Please select a patient from the queue first to open the ${label}.`);
+    // Dispatch a custom event to shake the patient queue panel
+    const event = new CustomEvent("nudge-patient-queue");
+    window.dispatchEvent(event);
+  };
 
-  // Define sidebar navigation items based on user's role
+  // Define sidebar navigation items based on user's role (persistently show items but mark disabled)
   const getNavItems = () => {
     if (!user) return [];
     
@@ -94,29 +171,25 @@ function DashboardLayoutContent({ children, vitals, setVitals, timeline }: Dashb
 
     if (role === "Doctor") {
       items.push(
-        { label: "Patients Queue", icon: ClipboardList, path: "/doctor" }
+        { label: "Patients Queue", icon: ClipboardList, path: "/doctor", disabled: false }
       );
-      if (patientId) {
-        items.push(
-          { label: "Patient Profile", icon: User, path: `/patient/${patientId}` },
-          { label: "Voice Consultation", icon: Stethoscope, path: `/patient/${patientId}/consultation` },
-          { label: "Scanned Records", icon: FileText, path: `/patient/${patientId}/upload` }
-        );
-      }
+      items.push(
+        { label: "Patient Profile", icon: User, path: `/patient/${patientId || ""}`, disabled: !patientId },
+        { label: "Voice Consultation", icon: Stethoscope, path: `/patient/${patientId || ""}/consultation`, disabled: !patientId },
+        { label: "Scanned Records", icon: FileText, path: `/patient/${patientId || ""}/upload`, disabled: !patientId }
+      );
     } else if (role === "Reception") {
       items.push(
-        { label: "Directory", icon: ClipboardList, path: "/reception" },
-        { label: "Voice Register", icon: UserPlus, path: "/reception/register-voice" }
+        { label: "Directory", icon: ClipboardList, path: "/reception", disabled: false },
+        { label: "Voice Register", icon: UserPlus, path: "/reception/register-voice", disabled: false }
       );
-      if (patientId) {
-        items.push(
-          { label: "Patient Details", icon: User, path: `/patient/${patientId}` },
-          { label: "Scanned Records", icon: FileText, path: `/patient/${patientId}/upload` }
-        );
-      }
+      items.push(
+        { label: "Patient Details", icon: User, path: `/patient/${patientId || ""}`, disabled: !patientId },
+        { label: "Scanned Records", icon: FileText, path: `/patient/${patientId || ""}/upload`, disabled: !patientId }
+      );
     } else if (role === "Admin") {
       items.push(
-        { label: "System Logs", icon: Settings, path: "/admin" }
+        { label: "System Logs", icon: Settings, path: "/admin", disabled: false }
       );
     }
     
@@ -124,6 +197,19 @@ function DashboardLayoutContent({ children, vitals, setVitals, timeline }: Dashb
   };
 
   const navItems = getNavItems();
+  const unreadCount = notifications.filter(n => !n.isRead).length;
+
+  const markAllAsRead = () => {
+    setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
+  };
+
+  const handleNotificationClick = (notif: NotificationItem) => {
+    setNotifications(prev => prev.map(n => n.id === notif.id ? { ...n, isRead: true } : n));
+    setShowNotifications(false);
+    if (notif.targetPath) {
+      router.push(notif.targetPath);
+    }
+  };
 
   return (
     <div className="h-screen w-screen flex bg-[#F8FAFC] text-[#111827] overflow-hidden antialiased text-[14px]">
@@ -174,15 +260,27 @@ function DashboardLayoutContent({ children, vitals, setVitals, timeline }: Dashb
               return (
                 <div key={idx} className="space-y-1">
                   <button
-                    onClick={() => router.push(item.path)}
-                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                      isActive && !isConsultationLink
+                    disabled={item.disabled}
+                    aria-disabled={item.disabled ? "true" : undefined}
+                    tabIndex={item.disabled ? -1 : 0}
+                    onClick={(e) => {
+                      if (item.disabled) {
+                        e.preventDefault();
+                        handleDisabledClick(item.label);
+                      } else {
+                        router.push(item.path);
+                      }
+                    }}
+                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition-all ${
+                      item.disabled
+                        ? "text-[#9CA3AF] cursor-not-allowed opacity-50 hover:bg-slate-50"
+                        : isActive && !isConsultationLink
                         ? "bg-blue-50 text-[#2563EB]"
                         : isActive
                         ? "text-[#111827] bg-[#F8FAFC]"
-                        : "text-[#6B7280] hover:bg-[#F8FAFC] hover:text-[#111827]"
+                        : "text-[#6B7280] hover:bg-[#F8FAFC] hover:text-[#111827] cursor-pointer"
                     }`}
-                    title={isCollapsed ? item.label : undefined}
+                    title={item.disabled ? `${item.label} (Select patient from queue to open)` : isCollapsed ? item.label : undefined}
                   >
                     <Icon className="h-4.5 w-4.5 flex-shrink-0" />
                     {!isCollapsed && <span className="truncate">{item.label}</span>}
@@ -220,82 +318,6 @@ function DashboardLayoutContent({ children, vitals, setVitals, timeline }: Dashb
               );
             })}
           </nav>
-
-          {/* Session Vitals Desk (Left Sidebar Version) */}
-          {!isCollapsed && pathname?.endsWith("/consultation") && vitals && (
-            <div className="border-t border-[#E5E7EB] pt-4 flex flex-col gap-3">
-              <div className="flex items-center gap-2 border-b border-[#E5E7EB] pb-1.5 flex-shrink-0">
-                <Activity className="h-4 w-4 text-[#2563EB]" />
-                <h3 className="text-xs font-bold uppercase tracking-wider text-[#111827]">
-                  Session Vitals Desk
-                </h3>
-              </div>
-              <div className="grid grid-cols-2 gap-2.5">
-                {[
-                  { key: "hr", label: "Heart Rate", unit: "bpm", placeholder: "72" },
-                  { key: "bp", label: "Blood Pressure", unit: "mmHg", placeholder: "120/80" },
-                  { key: "spo2", label: "SpO₂ Status", unit: "%", placeholder: "98" },
-                  { key: "temp", label: "Temperature", unit: "°F", placeholder: "98.6" },
-                  { key: "weight", label: "Weight", unit: "kg", placeholder: "70" }
-                ].map((vt) => (
-                  <div key={vt.key} className="flex flex-col gap-0.5">
-                    <span className="text-[9px] font-bold text-[#6B7280] uppercase tracking-wider">{vt.label}</span>
-                    <div className="flex items-center gap-1.5 bg-[#F8FAFC] border border-[#E5E7EB] rounded-xl px-2.5 py-1.5">
-                      <input
-                        type="text"
-                        value={(vitals as any)[vt.key] ?? ""}
-                        placeholder={vt.placeholder}
-                        onChange={(e) => setVitals?.({ ...vitals, [vt.key]: e.target.value })}
-                        className="w-full bg-transparent text-xs font-bold text-[#111827] focus:outline-none placeholder-slate-300"
-                      />
-                      <span className="text-[9px] text-[#6B7280] font-bold uppercase">{vt.unit}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Patient Case Timeline Card (Left Sidebar Version) */}
-          {!isCollapsed && pathname?.endsWith("/consultation") && timeline && (
-            <div className="border-t border-[#E5E7EB] pt-4 flex flex-col min-h-0">
-              <div className="flex items-center justify-between mb-3 border-b border-[#E5E7EB] pb-1.5 flex-shrink-0">
-                <div className="flex items-center gap-2">
-                  <Clock className="h-4 w-4 text-[#2563EB]" />
-                  <h3 className="text-xs font-bold uppercase tracking-wider text-[#111827]">
-                    Clinical Timeline
-                  </h3>
-                </div>
-              </div>
-
-              <div className="space-y-3 max-h-[200px] overflow-y-auto pr-1">
-                {timeline.length === 0 ? (
-                  <p className="text-xs text-[#6B7280] text-center py-2">No items recorded.</p>
-                ) : (
-                  timeline.slice(0, 5).map((evt: any) => (
-                    <div key={evt.id} className="relative pl-4 pb-3 border-l border-[#E5E7EB] last:border-0 last:pb-0">
-                      <span
-                        className={`absolute left-[-4.5px] top-1.5 h-2 w-2 rounded-full ${
-                          evt.event_type === "registration" ? "bg-[#2563EB]" :
-                          evt.event_type === "upload" ? "bg-indigo-500" :
-                          evt.event_type === "visit" ? "bg-[#16A34A]" :
-                          evt.event_type === "prescription" ? "bg-[#DC2626]" : "bg-slate-400"
-                        }`}
-                      />
-                      <div className="flex flex-col gap-0.5 text-xs">
-                        <span className="text-[9px] font-mono text-[#6B7280] font-semibold uppercase">
-                          {new Date(evt.event_date).toLocaleString()}
-                        </span>
-                        <span className="text-slate-700 font-medium leading-tight">
-                          {evt.event_summary}
-                        </span>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-          )}
         </div>
 
         {/* Sidebar Footer Logout details */}
@@ -323,7 +345,7 @@ function DashboardLayoutContent({ children, vitals, setVitals, timeline }: Dashb
       <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
         
         {/* Top Header Bar */}
-        <header className="h-16 border-b border-[#E5E7EB] bg-white px-6 flex items-center justify-between gap-4 flex-shrink-0">
+        <header className="h-16 border-b border-[#E5E7EB] bg-white px-6 flex items-center justify-between gap-4 flex-shrink-0 relative z-40">
           
           {/* Breadcrumbs or Role Badge */}
           <div className="flex items-center gap-2">
@@ -343,11 +365,65 @@ function DashboardLayoutContent({ children, vitals, setVitals, timeline }: Dashb
               <span className="hidden sm:inline">Voice System Online</span>
             </div>
 
-            {/* Notifications */}
-            <button className="p-2 rounded-xl hover:bg-[#F8FAFC] text-[#6B7280] hover:text-[#111827] transition-all relative cursor-pointer border border-[#E5E7EB]">
-              <Bell className="h-4.5 w-4.5" />
-              <span className="absolute top-1.5 right-1.5 h-1.5 w-1.5 bg-[#DC2626] rounded-full"></span>
-            </button>
+            {/* Notifications Button */}
+            <div className="relative">
+              <button
+                onClick={() => setShowNotifications(!showNotifications)}
+                className={`p-2 rounded-xl text-[#6B7280] hover:text-[#111827] transition-all relative cursor-pointer border border-[#E5E7EB] ${
+                  showNotifications ? "bg-slate-100 border-slate-300 text-slate-900" : "hover:bg-[#F8FAFC]"
+                }`}
+              >
+                <Bell className="h-4.5 w-4.5" />
+                {unreadCount > 0 && (
+                  <span className="absolute top-1.5 right-1.5 h-2 w-2 bg-[#DC2626] rounded-full border border-white" />
+                )}
+              </button>
+
+              {/* Notifications Dropdown Card */}
+              {showNotifications && (
+                <div className="absolute right-0 mt-2 w-80 bg-white border border-[#E5E7EB] rounded-2xl shadow-xl z-50 overflow-hidden animate-fade-in">
+                  <div className="p-3 border-b border-[#E5E7EB] flex items-center justify-between bg-slate-50">
+                    <span className="text-xs font-bold text-[#111827]">Clinical Notifications</span>
+                    {unreadCount > 0 && (
+                      <button
+                        onClick={markAllAsRead}
+                        className="text-[10px] font-bold text-[#2563EB] hover:text-blue-800 transition-colors"
+                      >
+                        Mark all read
+                      </button>
+                    )}
+                  </div>
+                  
+                  <div className="max-h-64 overflow-y-auto divide-y divide-slate-100">
+                    {notifications.length === 0 ? (
+                      <div className="p-6 text-center text-xs text-[#6B7280]">
+                        All caught up! 🎉
+                      </div>
+                    ) : (
+                      notifications.map((notif) => (
+                        <div
+                          key={notif.id}
+                          onClick={() => handleNotificationClick(notif)}
+                          className={`p-3 text-left hover:bg-slate-50 transition-all cursor-pointer flex items-start gap-2.5 ${
+                            !notif.isRead ? "bg-blue-50/30" : ""
+                          }`}
+                        >
+                          <div className={`h-2 w-2 rounded-full shrink-0 mt-1.5 ${
+                            !notif.isRead ? "bg-[#2563EB]" : "bg-transparent"
+                          }`} />
+                          <div className="flex-1 min-w-0">
+                            <p className={`text-xs ${!notif.isRead ? "font-bold text-slate-900" : "text-slate-700"}`}>
+                              {notif.message}
+                            </p>
+                            <span className="text-[9px] text-slate-400 block mt-1">{notif.time}</span>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
 
             {/* Help */}
             <button className="p-2 rounded-xl hover:bg-[#F8FAFC] text-[#6B7280] hover:text-[#111827] transition-all border border-[#E5E7EB] cursor-pointer">
@@ -368,6 +444,14 @@ function DashboardLayoutContent({ children, vitals, setVitals, timeline }: Dashb
             </div>
           </div>
         </header>
+
+        {/* Global Toast Message alerts */}
+        {toastMessage && (
+          <div className="fixed bottom-6 left-6 z-50 bg-[#1E293B] text-white text-xs font-bold px-4 py-3 rounded-xl shadow-lg border border-[#334155] flex items-center gap-2 animate-fade-in-up">
+            <ShieldAlert className="h-4 w-4 text-[#F59E0B]" />
+            <span>{toastMessage}</span>
+          </div>
+        )}
 
         {/* Content Wrapper */}
         <div className="flex-1 overflow-hidden h-full">
