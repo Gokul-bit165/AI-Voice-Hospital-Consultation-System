@@ -1,6 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  devIndicators: false,
+
   // Allow mobile devices on the local network to access HMR dev resources
   allowedDevOrigins: [
     "10.217.197.220",   // Mobile device IP

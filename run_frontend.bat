@@ -1,6 +1,6 @@
 @echo off
 echo Starting Frontend Next.js app...
-echo Frontend accessible at http://YOUR_PC_IP:3000
+echo Frontend accessible at https://YOUR_PC_IP:3000
 cd frontend
-npm run dev -- --hostname 0.0.0.0
+npm run dev -- --experimental-https --hostname 0.0.0.0
 pause
