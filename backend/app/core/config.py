@@ -37,8 +37,16 @@ class Settings(BaseSettings):
     # OCR Features
     ENABLE_GEMINI_VISION_OCR: bool = Field(default=True)
     
-    # CORS
-    BACKEND_CORS_ORIGINS: List[str] = ["http://localhost:3000", "http://127.0.0.1:3000"]
+    # CORS — allow localhost AND any LAN device (for mobile testing over Wi-Fi)
+    BACKEND_CORS_ORIGINS: List[str] = [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        # PC's current Wi-Fi IP — phone connects via this origin
+        "http://10.217.197.220:3000",
+        # Broad local-network origins (covers 10.x.x.x and 192.168.x.x subnets)
+        "http://10.217.197.220",
+        "http://192.168.1.1:3000",
+    ]
     
     model_config = SettingsConfigDict(
         env_file=os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), ".env"),

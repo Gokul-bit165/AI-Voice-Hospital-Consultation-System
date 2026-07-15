@@ -114,3 +114,20 @@ body {
   border: 1px solid #E5E7EB; padding: 4px 8px; text-align: left;
 }
 .agent-markdown th { background: #F8FAFC; font-weight: 700; }
+
+/* ── Mobile safe-area utilities ── */
+/* Notched phone (iPhone) bottom padding for fixed bars */
+.pb-safe { padding-bottom: env(safe-area-inset-bottom, 0px); }
+.safe-pb { padding-bottom: max(env(safe-area-inset-bottom, 0px), 0.5rem); }
+
+/* Hide scrollbars on chip rows while keeping scroll functional */
+.scrollbar-none { scrollbar-width: none; }
+.scrollbar-none::-webkit-scrollbar { display: none; }
+
+/* Keyboard guard: use dynamic viewport height so fixed/sticky bars
+   resize correctly when the mobile soft keyboard opens */
+@supports (height: 100dvh) {
+  .h-screen { height: 100dvh; }
+  .min-h-screen { min-height: 100dvh; }
+}
+

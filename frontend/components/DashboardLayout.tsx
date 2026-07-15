@@ -40,6 +40,7 @@ function DashboardLayoutContent({ children, vitals, setVitals, timeline }: Dashb
   const patientId = params?.id as string | undefined;
   const [user, setUser] = useState<UserResponse | null>(null);
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
 
   // Notifications State
@@ -215,10 +216,24 @@ function DashboardLayoutContent({ children, vitals, setVitals, timeline }: Dashb
     <div className="h-screen w-screen flex bg-[#F8FAFC] text-[#111827] overflow-hidden antialiased text-[14px]">
       
       {/* ══════════════ LEFT SIDEBAR ══════════════ */}
-      <aside 
-        className={`bg-white border-r border-[#E5E7EB] flex flex-col justify-between p-4 flex-shrink-0 transition-all duration-300 ${
-          isCollapsed ? "w-20" : "w-60"
-        }`}
+
+      {/* Mobile backdrop overlay — shown when drawer is open */}
+      {isMobileOpen && (
+        <div
+          onClick={() => setIsMobileOpen(false)}
+          className="fixed inset-0 bg-black/40 z-40 lg:hidden"
+          aria-hidden="true"
+        />
+      )}
+
+      <aside
+        className={`
+          fixed inset-y-0 left-0 z-50 bg-white border-r border-[#E5E7EB] flex flex-col justify-between p-4 flex-shrink-0 transition-all duration-300
+          lg:relative lg:inset-auto lg:z-auto
+          ${isMobileOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}
+          w-72
+          ${isCollapsed ? "lg:w-20" : "lg:w-60"}
+        `}
       >
         {/* Logo / Clinical Branding (Fixed Top) */}
         <div className="flex items-center justify-between px-1 flex-shrink-0 mb-4">
@@ -238,10 +253,10 @@ function DashboardLayoutContent({ children, vitals, setVitals, timeline }: Dashb
             )}
           </div>
 
-          {/* Toggle Button */}
+          {/* Toggle Button — desktop only; on mobile the drawer is always full-width */}
           <button 
             onClick={handleToggleSidebar}
-            className="p-1.5 rounded-lg border border-[#E5E7EB] hover:bg-slate-50 text-[#6B7280] hover:text-[#111827] cursor-pointer transition-colors"
+            className="hidden lg:flex p-1.5 rounded-lg border border-[#E5E7EB] hover:bg-slate-50 text-[#6B7280] hover:text-[#111827] cursor-pointer transition-colors items-center justify-center"
           >
             {isCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
           </button>
@@ -268,6 +283,7 @@ function DashboardLayoutContent({ children, vitals, setVitals, timeline }: Dashb
                         e.preventDefault();
                         handleDisabledClick(item.label);
                       } else {
+                        setIsMobileOpen(false); // close drawer on mobile
                         router.push(item.path);
                       }
                     }}
@@ -345,10 +361,18 @@ function DashboardLayoutContent({ children, vitals, setVitals, timeline }: Dashb
       <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
         
         {/* Top Header Bar */}
-        <header className="h-16 border-b border-[#E5E7EB] bg-white px-6 flex items-center justify-between gap-4 flex-shrink-0 relative z-40">
+        <header className="h-16 border-b border-[#E5E7EB] bg-white px-4 sm:px-6 flex items-center justify-between gap-2 sm:gap-4 flex-shrink-0 relative z-40">
           
           {/* Breadcrumbs or Role Badge */}
           <div className="flex items-center gap-2">
+            {/* Hamburger — mobile only */}
+            <button
+              onClick={() => setIsMobileOpen(true)}
+              className="lg:hidden p-2 rounded-xl border border-[#E5E7EB] hover:bg-slate-50 text-[#6B7280] cursor-pointer flex-shrink-0"
+              aria-label="Open navigation menu"
+            >
+              <Menu className="h-4 w-4" />
+            </button>
             <span className="bg-blue-50 text-[#2563EB] text-[10px] px-2 py-0.5 rounded-full border border-blue-100 uppercase font-bold tracking-wider">
               {user?.role || "PORTAL"}
             </span>

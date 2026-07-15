@@ -251,6 +251,7 @@ export default function ConsultationPage({
   ]);
   const [agentRunning, setAgentRunning] = useState(false);
   const [seenFirstAgentAnswer, setSeenFirstAgentAnswer] = useState(false);
+  const [aiSheetOpen, setAiSheetOpen] = useState(false); // mobile AI slide-up sheet
   const [chatbotDictating, setChatbotDictating] = useState(false);
   const [chatbotLoading, setChatbotLoading] = useState(false);
   const chatbotRecorderRef = useRef<MediaRecorder | null>(null);
@@ -725,9 +726,11 @@ export default function ConsultationPage({
           </div>
 
           {/* Patient Header Card — persistent context, always visible regardless of tab */}
-          <div className="mx-6 mt-4 p-5 rounded-2xl border border-[#E5E7EB] bg-white shadow-sm flex-shrink-0">
-            <div className="flex flex-col md:flex-row md:items-center gap-5">
-              <PatientAvatar />
+          <div className="mx-3 sm:mx-6 mt-3 sm:mt-4 p-3 sm:p-5 rounded-2xl border border-[#E5E7EB] bg-white shadow-sm flex-shrink-0">
+            <div className="flex flex-col md:flex-row md:items-center gap-4 sm:gap-5">
+              <div className="hidden sm:block flex-shrink-0">
+                <PatientAvatar />
+              </div>
 
               <div className="space-y-3 flex-1 min-w-0">
                 <div className="flex flex-wrap items-center gap-2.5">
@@ -797,7 +800,7 @@ export default function ConsultationPage({
           </div>
 
           {/* Tab content — scrollable */}
-          <main className="flex-1 overflow-y-auto px-6 py-5 pb-24 space-y-4">
+          <main className="flex-1 overflow-y-auto px-3 sm:px-6 py-4 sm:py-5 pb-28 lg:pb-6 space-y-4">
 
             {/* ── TAB: VITALS & VOICE ───────────────────────────────────────── */}
             {activeTab === "vitals" && (
@@ -1121,13 +1124,46 @@ export default function ConsultationPage({
             )}
           </main>
 
+          {/* ── Mobile Bottom Tab Bar (hidden on lg+) ── */}
+          <nav className="lg:hidden fixed bottom-0 inset-x-0 z-30 bg-white border-t border-[#E5E7EB] flex items-stretch h-14 safe-pb">
+            {([
+              { label: "Dictation",   tabId: "vitals",   icon: Mic },
+              { label: "Medications", tabId: "rx",        icon: Pill },
+              { label: "Labs",        tabId: "history",   icon: History },
+            ] as { label: string; tabId: Tab; icon: React.FC<{className?: string}> }[]).map(({ label, tabId, icon: Icon }) => (
+              <button
+                key={tabId}
+                onClick={() => handleTabChange(tabId)}
+                className={`flex-1 flex flex-col items-center justify-center gap-0.5 text-[10px] font-bold transition-colors min-h-[44px] cursor-pointer ${
+                  activeTab === tabId
+                    ? "text-[#2563EB] border-t-2 border-[#2563EB] -mt-px bg-blue-50/50"
+                    : "text-[#6B7280] hover:text-[#111827]"
+                }`}
+              >
+                <Icon className="h-5 w-5" />
+                <span>{label}</span>
+              </button>
+            ))}
+            {/* AI Agent toggle tab */}
+            <button
+              onClick={() => setAiSheetOpen(true)}
+              className="flex-1 flex flex-col items-center justify-center gap-0.5 text-[10px] font-bold text-[#6B7280] hover:text-[#2563EB] transition-colors min-h-[44px] cursor-pointer relative"
+            >
+              <Brain className="h-5 w-5" />
+              <span>AI Agent</span>
+              {agentRunning && (
+                <span className="absolute top-2 right-[18%] h-2 w-2 rounded-full bg-[#2563EB] animate-pulse" />
+              )}
+            </button>
+          </nav>
+
           {/* Sticky Bottom Actions Bar */}
-          <footer className="h-16 border-t border-[#E5E7EB] bg-white px-6 flex items-center justify-between gap-4 flex-shrink-0">
+          <footer className="border-t border-[#E5E7EB] bg-white px-3 sm:px-6 py-2 sm:h-16 flex flex-wrap sm:flex-nowrap items-center justify-between gap-2 sm:gap-4 flex-shrink-0">
             <div className="flex items-center gap-3">
               <button
                 onClick={handlePrint}
                 disabled={printLoading}
-                className="inline-flex items-center gap-2 px-4 py-2 bg-white hover:bg-slate-50 border border-[#E5E7EB] rounded-xl text-xs font-bold text-slate-700 cursor-pointer active:scale-95 transition-all disabled:opacity-55 shadow-sm"
+                className="inline-flex items-center gap-2 px-4 py-2.5 min-h-[44px] bg-white hover:bg-slate-50 border border-[#E5E7EB] rounded-xl text-xs font-bold text-slate-700 cursor-pointer active:scale-95 transition-all disabled:opacity-55 shadow-sm"
               >
                 {printLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileText className="h-3.5 w-3.5 text-[#2563EB]" />}
                 <span>Preview PDF</span>
@@ -1135,7 +1171,7 @@ export default function ConsultationPage({
               <button
                 onClick={handleSaveDraft}
                 disabled={saving}
-                className="inline-flex items-center gap-2 px-4 py-2 bg-white hover:bg-slate-50 border border-[#E5E7EB] rounded-xl text-xs font-bold text-slate-700 cursor-pointer active:scale-95 transition-all disabled:opacity-55 shadow-sm"
+                className="inline-flex items-center gap-2 px-4 py-2.5 min-h-[44px] bg-white hover:bg-slate-50 border border-[#E5E7EB] rounded-xl text-xs font-bold text-slate-700 cursor-pointer active:scale-95 transition-all disabled:opacity-55 shadow-sm"
               >
                 <ShieldCheck className="h-3.5 w-3.5 text-[#16A34A]" />
                 <span>Save Draft</span>
@@ -1146,7 +1182,7 @@ export default function ConsultationPage({
               <button
                 onClick={handleFinalize}
                 disabled={saving}
-                className="inline-flex items-center gap-2 px-6 py-2.5 bg-[#2563EB] hover:bg-blue-700 text-white rounded-xl text-xs font-bold cursor-pointer active:scale-95 transition-all shadow-sm disabled:opacity-55"
+                className="inline-flex items-center gap-2 px-6 py-2.5 min-h-[44px] bg-[#2563EB] hover:bg-blue-700 text-white rounded-xl text-xs font-bold cursor-pointer active:scale-95 transition-all shadow-sm disabled:opacity-55"
               >
                 {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle className="h-3.5 w-3.5" />}
                 <span>Finalize Prescription</span>
@@ -1181,7 +1217,25 @@ export default function ConsultationPage({
         </div>
 
         {/* ══════ AI CLINICAL AGENT PANEL ══════ */}
-        <div className="flex-shrink-0 flex flex-col bg-white border-t lg:border-t-0 lg:border-l border-[#E5E7EB] min-h-[50vh] lg:h-full w-full lg:w-[var(--chat-width)] overflow-hidden">
+
+        {/* Mobile backdrop for AI slide-up sheet */}
+        {aiSheetOpen && (
+          <div
+            onClick={() => setAiSheetOpen(false)}
+            className="fixed inset-0 bg-black/40 z-30 lg:hidden"
+            aria-hidden="true"
+          />
+        )}
+
+        <div className={`
+          flex-shrink-0 flex flex-col bg-white overflow-hidden
+          border-t border-[#E5E7EB] lg:border-t-0 lg:border-l
+          lg:relative lg:h-full lg:w-[var(--chat-width)] lg:translate-y-0
+          fixed inset-x-0 bottom-0 z-40 lg:z-auto
+          transition-transform duration-300 ease-out
+          ${aiSheetOpen ? "translate-y-0" : "translate-y-full lg:translate-y-0"}
+          max-h-[85vh] lg:max-h-full rounded-t-2xl lg:rounded-none shadow-2xl lg:shadow-none
+        `}>
           <div className="flex-1 flex flex-col min-h-0 bg-white">
 
             {/* ── Header ── */}
@@ -1196,6 +1250,14 @@ export default function ConsultationPage({
                 </div>
               </div>
               <div className="flex items-center gap-1.5">
+                {/* Mobile close handle for AI sheet */}
+                <button
+                  onClick={() => setAiSheetOpen(false)}
+                  className="lg:hidden p-1.5 rounded-lg hover:bg-slate-100 text-[#6B7280] cursor-pointer"
+                  aria-label="Close AI panel"
+                >
+                  <ChevronDown className="h-4 w-4" />
+                </button>
                 {agentRunning && (
                   <span className="flex items-center gap-1 text-[9px] text-[#2563EB] font-bold bg-blue-50 border border-blue-100 px-2 py-0.5 rounded-full">
                     <span className="h-1.5 w-1.5 rounded-full bg-[#2563EB] animate-pulse inline-block" />
@@ -1261,7 +1323,7 @@ export default function ConsultationPage({
                   type="button"
                   onClick={toggleChatbotDictation}
                   disabled={agentRunning || chatbotLoading}
-                  className={`absolute right-2.5 p-1 rounded-lg transition-all cursor-pointer ${
+                  className={`absolute right-2.5 p-2 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg transition-all cursor-pointer ${
                     chatbotDictating
                       ? "text-[#DC2626] bg-red-50 animate-pulse hover:bg-red-100"
                       : "text-[#6B7280] hover:text-[#111827] hover:bg-slate-100"
@@ -1278,9 +1340,16 @@ export default function ConsultationPage({
                 </button>
               </div>
               {agentRunning ? (
-                <button type="button" onClick={stopAgent}
-                  className="p-2 bg-[#DC2626] hover:bg-red-700 rounded-xl text-white transition-all cursor-pointer active:scale-95 flex items-center justify-center shadow-sm">
-                  <Square className="h-4 w-4 fill-white" />
+                <button
+                  type="button"
+                  onClick={stopAgent}
+                  title="Stop agent"
+                  className="relative flex items-center gap-1.5 pl-2.5 pr-3 py-2 bg-[#DC2626] hover:bg-red-700 active:scale-95 rounded-xl text-white text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer shadow-md overflow-hidden"
+                >
+                  {/* Pulsing ring behind button */}
+                  <span className="absolute inset-0 rounded-xl bg-red-400 animate-ping opacity-20 pointer-events-none" />
+                  <Square className="h-3.5 w-3.5 fill-white shrink-0" />
+                  <span>Stop</span>
                 </button>
               ) : (
                 <button type="submit" disabled={!agentInput.trim() || chatbotDictating || chatbotLoading}

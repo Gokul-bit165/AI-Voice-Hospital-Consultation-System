@@ -1,4 +1,10 @@
-export const API_BASE_URL = "http://localhost:8000/api/v1";
+// Auto-detect the backend host so mobile devices on the same Wi-Fi
+// can reach the API without needing to change this file.
+// On a browser: uses the same hostname the page was loaded from.
+// On SSR / localhost: falls back to 127.0.0.1.
+const _host = typeof window !== "undefined" ? window.location.hostname : "127.0.0.1";
+export const API_BASE_URL = `http://${_host}:8000/api/v1`;
+
 
 export interface TokenResponse {
   access_token: string;

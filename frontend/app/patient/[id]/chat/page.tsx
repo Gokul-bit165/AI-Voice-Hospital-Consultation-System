@@ -274,43 +274,43 @@ export default function StandaloneChatPage({
   return (
     <div className="flex flex-col h-screen w-screen bg-[#F8FAFC]">
       {/* ── TOP HEADER ── */}
-      <header className="h-16 bg-white border-b border-[#E5E7EB] px-6 flex items-center justify-between shadow-sm flex-shrink-0 z-10">
+      <header className="min-h-14 bg-white border-b border-[#E5E7EB] px-4 sm:px-6 flex flex-wrap sm:flex-nowrap items-center justify-between gap-2 py-2 sm:py-0 sm:h-16 shadow-sm flex-shrink-0 z-10">
         <div className="flex items-center gap-3">
           <button
             onClick={() => window.close()}
-            className="p-2 hover:bg-slate-50 border border-[#E5E7EB] rounded-xl text-slate-600 hover:text-slate-900 transition-all cursor-pointer flex items-center gap-1.5 text-xs font-bold shadow-sm"
+            className="p-2 hover:bg-slate-50 border border-[#E5E7EB] rounded-xl text-slate-600 hover:text-slate-900 transition-all cursor-pointer flex items-center gap-1.5 text-xs font-bold shadow-sm min-h-[44px]"
           >
             <ChevronLeft className="h-4 w-4" />
             Close Tab
           </button>
-          <div className="h-8 w-px bg-slate-200" />
+          <div className="h-8 w-px bg-slate-200 hidden sm:block" />
           <div className="flex items-center gap-2">
             <div className="p-1.5 rounded-lg bg-[#2563EB] shadow-md">
               <Brain className="h-4 w-4 text-white" />
             </div>
             <div>
               <h1 className="text-sm font-bold text-[#111827] leading-tight">Standalone Clinical Agent</h1>
-              <p className="text-[10px] text-[#6B7280] font-medium">Isolated Patient Context Mode</p>
+              <p className="text-[10px] text-[#6B7280] font-medium hidden sm:block">Isolated Patient Context Mode</p>
             </div>
           </div>
         </div>
 
         {/* Patient Profile Context Ribbon */}
         {patient && (
-          <div className="flex items-center gap-4 bg-blue-50/50 border border-blue-100 rounded-xl px-4 py-1.5 text-xs">
+          <div className="flex items-center gap-2 sm:gap-4 bg-blue-50/50 border border-blue-100 rounded-xl px-3 sm:px-4 py-1.5 text-xs overflow-x-auto max-w-full scrollbar-none">
             <div>
               <span className="text-[9px] text-[#6B7280] font-bold uppercase tracking-wider block">Patient Context</span>
               <span className="font-bold text-slate-800">{patient.full_name}</span>
             </div>
-            <div className="h-6 w-px bg-blue-100" />
-            <div>
+            <div className="hidden sm:block h-6 w-px bg-blue-100" />
+            <div className="hidden sm:block">
               <span className="text-[9px] text-[#6B7280] font-bold uppercase tracking-wider block">Age / Gender</span>
               <span className="font-semibold text-slate-700">{patient.gender}</span>
             </div>
             {patient.allergies && patient.allergies.length > 0 && (
               <>
                 <div className="h-6 w-px bg-blue-100" />
-                <div className="flex items-center gap-1 text-[#DC2626] font-bold uppercase text-[9px] bg-red-50 border border-red-100 px-2 py-0.5 rounded-full">
+                <div className="flex items-center gap-1 text-[#DC2626] font-bold uppercase text-[9px] bg-red-50 border border-red-100 px-2 py-0.5 rounded-full whitespace-nowrap">
                   Allergy: {patient.allergies[0]}
                 </div>
               </>
@@ -320,7 +320,7 @@ export default function StandaloneChatPage({
       </header>
 
       {/* ── CONVERSATION SPACE ── */}
-      <main className="flex-1 overflow-y-auto px-6 py-6 space-y-6 max-w-4xl w-full mx-auto min-h-0 bg-white shadow-sm border-x border-[#E5E7EB]">
+      <main className="flex-1 overflow-y-auto px-3 sm:px-6 py-4 sm:py-6 space-y-5 sm:space-y-6 max-w-4xl w-full mx-auto min-h-0 bg-white shadow-sm border-x border-[#E5E7EB]">
         {agentMessages.map((msg) => (
           <div key={msg.id} className="max-w-3xl mx-auto">
             <AgentMessageBubble
@@ -336,10 +336,10 @@ export default function StandaloneChatPage({
       </main>
 
       {/* ── BOTTOM ACTIONS & INPUT AREA ── */}
-      <footer className="bg-white border-t border-[#E5E7EB] py-4 px-6 flex-shrink-0 shadow-inner z-10">
+      <footer className="bg-white border-t border-[#E5E7EB] py-3 sm:py-4 px-4 sm:px-6 flex-shrink-0 shadow-inner z-10 pb-safe">
         <div className="max-w-3xl mx-auto space-y-3">
           {/* Quick clinical queries */}
-          <div className="flex flex-wrap gap-2 items-center">
+          <div className="flex gap-2 items-center overflow-x-auto pb-1 scrollbar-none">
             <span className="text-[9px] font-bold text-[#6B7280] uppercase tracking-wider">Quick Actions:</span>
             {[
               { label: "📋 Summarize Medical History", q: "Summarize this patient's complete medical history, allergies, recent visits and current medications." },
@@ -367,13 +367,13 @@ export default function StandaloneChatPage({
                 onChange={(e) => setAgentInput(e.target.value)}
                 placeholder={chatbotLoading ? "Transcribing voice..." : "Ask the clinical agent details, analyze logs, or check safety..."}
                 disabled={agentRunning || chatbotDictating || chatbotLoading}
-                className="w-full pl-4 pr-12 py-3 rounded-xl text-xs bg-[#F8FAFC] border border-[#E5E7EB] text-[#111827] placeholder-[#9CA3AF] focus:outline-none focus:border-[#2563EB] focus:ring-1 focus:ring-[#2563EB] transition-colors disabled:opacity-60 shadow-sm"
+                className="w-full pl-4 pr-14 py-3 min-h-[44px] rounded-xl text-xs bg-[#F8FAFC] border border-[#E5E7EB] text-[#111827] placeholder-[#9CA3AF] focus:outline-none focus:border-[#2563EB] focus:ring-1 focus:ring-[#2563EB] transition-colors disabled:opacity-60 shadow-sm"
               />
               <button
                 type="button"
                 onClick={toggleChatbotDictation}
                 disabled={agentRunning || chatbotLoading}
-                className={`absolute right-3.5 p-1.5 rounded-lg transition-all cursor-pointer ${
+                className={`absolute right-3 p-2 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg transition-all cursor-pointer ${
                   chatbotDictating
                     ? "text-[#DC2626] bg-red-50 animate-pulse hover:bg-red-100"
                     : "text-[#6B7280] hover:text-[#111827] hover:bg-slate-100"
@@ -393,9 +393,13 @@ export default function StandaloneChatPage({
               <button
                 type="button"
                 onClick={stopAgent}
-                className="p-3 bg-[#DC2626] hover:bg-red-700 rounded-xl text-white transition-all cursor-pointer active:scale-95 flex items-center justify-center shadow-md"
+                title="Stop agent"
+                className="relative flex items-center gap-2 pl-3 pr-4 py-3 bg-[#DC2626] hover:bg-red-700 active:scale-95 rounded-xl text-white text-[11px] font-bold uppercase tracking-wider transition-all cursor-pointer shadow-md overflow-hidden"
               >
-                <Square className="h-5 w-5 fill-white" />
+                {/* Pulsing ring behind button */}
+                <span className="absolute inset-0 rounded-xl bg-red-400 animate-ping opacity-20 pointer-events-none" />
+                <Square className="h-4 w-4 fill-white shrink-0" />
+                <span>Stop Agent</span>
               </button>
             ) : (
               <button

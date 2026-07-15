@@ -74,7 +74,7 @@ function ToolCallCard({ step, autoExpand }: { step: AgentStepUI; autoExpand?: bo
       >
         <span className="text-sm leading-none">{meta.emoji}</span>
         <span className="flex-1 min-w-0">
-          <span className="text-[10px] font-bold block leading-tight truncate" style={{ color: meta.color }}>
+          <span className="text-[10px] font-bold block leading-tight truncate max-w-[160px] sm:max-w-none" style={{ color: meta.color }}>
             {step.label || step.tool_name?.replace(/_/g, " ")}
           </span>
           {step.duration_ms !== undefined && isDone && (
@@ -103,7 +103,7 @@ function ToolCallCard({ step, autoExpand }: { step: AgentStepUI; autoExpand?: bo
           {step.tool_args && Object.keys(step.tool_args).length > 0 && (
             <div className="mb-1.5 mt-1.5">
               <span className="text-[8px] font-bold uppercase tracking-widest text-[#6B7280] block mb-0.5">Args</span>
-              <pre className="text-[9px] bg-white/80 rounded p-1.5 overflow-x-auto text-[#374151] font-mono leading-relaxed border border-white/60">
+              <pre className="text-[9px] bg-white/80 rounded p-1.5 overflow-x-auto max-w-full text-[#374151] font-mono leading-relaxed border border-white/60 break-all">
                 {JSON.stringify(step.tool_args, null, 2)}
               </pre>
             </div>
