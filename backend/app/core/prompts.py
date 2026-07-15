@@ -1,6 +1,8 @@
 import os
+from functools import lru_cache
 from backend.app.core.config import settings
 
+@lru_cache(maxsize=16)
 def load_prompt_template(filename: str) -> str:
     """
     Loads a prompt template from the backend/app/prompt_templates/ directory.

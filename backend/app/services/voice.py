@@ -95,7 +95,7 @@ class VoiceService:
                     prompt_str = prompt_str[:850].rsplit(',', 1)[0]
                 
                 transcript = self.groq_client.audio.transcriptions.create(
-                    model="whisper-large-v3",
+                    model="whisper-large-v3-turbo",
                     file=audio_file,
                     response_format="text",
                     language="en",
