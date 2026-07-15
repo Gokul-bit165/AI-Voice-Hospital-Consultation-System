@@ -355,7 +355,7 @@ export const api = {
   },
 
   // Prescription
-  async createPrescription(visitId: string, data: { medicines?: Medicine[]; audio_base64?: string }): Promise<Prescription> {
+  async createPrescription(visitId: string, data: { medicines?: Medicine[]; audio_base64?: string; transcript?: string }): Promise<Prescription> {
     return fetchWithAuth(`${API_BASE_URL}/visits/${visitId}/prescription`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },

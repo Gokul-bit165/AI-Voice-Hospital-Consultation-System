@@ -23,6 +23,7 @@ router = APIRouter()
 class PrescriptionCreateRequest(BaseModel):
     medicines: Optional[List[MedicineSchema]] = None
     audio_base64: Optional[str] = None # For dictating prescription via voice
+    transcript: Optional[str] = None # Direct text dictation fallback (e.g. mobile)
 
 @router.post("/visits/{visit_id}/prescription", response_model=PrescriptionResponse)
 async def create_prescription(
@@ -70,7 +71,11 @@ async def create_prescription(
 
     medicines_list = []
     
-    if req.audio_base64:
+    if req.transcript:
+        # Direct text transcript (used as fallback for mobile devices)
+        extracted_meds = prescription_service.parse_dictation(req.transcript)
+        medicines_list = [med.model_dump() for med in extracted_meds]
+    elif req.audio_base64:
         # Dictated prescription parsing
         try:
             audio_bytes = base64.b64decode(req.audio_base64)

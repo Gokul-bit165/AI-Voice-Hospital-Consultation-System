@@ -177,6 +177,7 @@ export default function ConsultationPage({
   const [finalTranscript, setFinalTranscript] = useState("");
   const [interimTranscript, setInterimTranscript] = useState("");
   const recognitionRef = useRef<any>(null);
+  const finalTranscriptRef = useRef<string>("");
 
   // ── Resizable AI assistant panel ─────────────────────────────────────────
   const [chatWidth, setChatWidth] = useState(420);
@@ -344,6 +345,7 @@ export default function ConsultationPage({
     setDictationStatus("🎙 Listening — speak now");
     setFinalTranscript("");
     setInterimTranscript("");
+    finalTranscriptRef.current = "";
     chunksRef.current = [];
     
     // Start native Web Speech API recognition for realtime captioning
@@ -367,6 +369,7 @@ export default function ConsultationPage({
           }
           setFinalTranscript(finalTranscript);
           setInterimTranscript(interimTranscript);
+          finalTranscriptRef.current = finalTranscript;
         };
         
         recognition.onerror = (e: any) => {
@@ -378,6 +381,12 @@ export default function ConsultationPage({
       } catch (err) {
         console.error("Failed to start SpeechRecognition:", err);
       }
+    }
+
+    // Detect mobile device to skip MediaRecorder (avoids hardware concurrency conflict)
+    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    if (isMobile) {
+      return;
     }
 
     try {
@@ -403,14 +412,45 @@ export default function ConsultationPage({
   };
 
   const stopDictation = () => {
-    if (recorderRef.current && dictating) {
-      recorderRef.current.stop();
-    }
+    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    
     if (recognitionRef.current) {
       recognitionRef.current.stop();
     }
-    setDictating(false);
-    setDictationStatus("⚙ AI parsing...");
+
+    if (isMobile) {
+      setDictating(false);
+      setDictationStatus("⚙ AI parsing...");
+      parseDictationText(finalTranscriptRef.current);
+    } else {
+      if (recorderRef.current && dictating) {
+        recorderRef.current.stop();
+      }
+      setDictating(false);
+      setDictationStatus("⚙ AI parsing...");
+    }
+  };
+
+  const parseDictationText = async (text: string) => {
+    if (!activeVisit) return;
+    if (!text.trim()) {
+      setDictationStatus("❌ No speech recognized");
+      setTimeout(() => setDictationStatus(""), 3000);
+      return;
+    }
+    setDictationLoading(true);
+    try {
+      const rx = await api.createPrescription(activeVisit.id, { transcript: text });
+      setMedicines(rx.medicines ?? []);
+      setDictationStatus("✅ Parsed!");
+      handleTabChange("rx");
+      setTimeout(() => setDictationStatus(""), 4000);
+    } catch (err: any) {
+      alert("Failed to parse dictation: " + err.message);
+      setDictationStatus("");
+    } finally {
+      setDictationLoading(false);
+    }
   };
 
   const parseDictation = async (blob: Blob) => {
