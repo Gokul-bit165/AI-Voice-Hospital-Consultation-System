@@ -402,6 +402,14 @@ export const api = {
     });
   },
 
+  async transcribeAudio(audioBase64: string, fileFormat = "wav"): Promise<{ transcript: string }> {
+    return fetchWithAuth(`${API_BASE_URL}/voice/transcribe`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ audio_base64: audioBase64, file_format: fileFormat }),
+    });
+  },
+
   // Admin Centralized logs & User creation
   async getAuditLogs(): Promise<AuditLog[]> {
     return fetchWithAuth(`${API_BASE_URL}/admin/audit-logs`);

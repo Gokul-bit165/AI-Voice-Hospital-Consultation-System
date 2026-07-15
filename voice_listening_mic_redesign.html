@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Voice Consultation Component Redesign</title>
+  <!-- Modern font -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  
+  <style>
+    :root {
+      /* Base System Design Tokens (Fallback defaults matching system colors) */
+      --fill-danger: #EF4444; /* Premium Red-500 */
+      --fill-danger-hover: #DC2626; /* Red-600 */
+      --on-danger: #FFFFFF;
+      --bg-danger: rgba(239, 68, 68, 0.08);
+      --bg-danger-pulse: rgba(239, 68, 68, 0.16);
+      --fill-secondary: #F3F4F6;
+      --border-strong: #E5E7EB;
+      --text-primary: #111827;
+      --text-secondary: #4B5563;
+      --text-muted: #9CA3AF;
+      --text-danger: #EF4444;
+      
+      /* Component Layout Tokens */
+      --font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+      --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.04);
+      --shadow-md: 0 10px 30px rgba(0, 0, 0, 0.06);
+      --shadow-lg: 0 20px 40px rgba(0, 0, 0, 0.08);
+      --shadow-red: 0 8px 24px rgba(239, 68, 68, 0.25);
+      --shadow-red-hover: 0 12px 28px rgba(239, 68, 68, 0.4);
+      --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: var(--font-family);
+      background: linear-gradient(135deg, #F9FAFB 0%, #F3F4F6 100%);
+      color: var(--text-primary);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 2rem;
+    }
+
+    /* Showcase Container Card */
+    .showcase-card {
+      background: #FFFFFF;
+      border: 1px solid rgba(229, 231, 235, 0.7);
+      border-radius: 24px;
+      padding: 3rem;
+      max-width: 680px;
+      width: 100%;
+      box-shadow: var(--shadow-lg);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2.5rem;
+      position: relative;
+      overflow: hidden;
+    }
+
+    /* Red Accent top border line */
+    .showcase-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 6px;
+      background: linear-gradient(90deg, #EF4444 0%, #F87171 100%);
+    }
+
+    .showcase-header {
+      text-align: center;
+      margin-bottom: 0.5rem;
+    }
+
+    .showcase-header h1 {
+      font-size: 1.5rem;
+      font-weight: 800;
+      color: var(--text-primary);
+      letter-spacing: -0.025em;
+      margin-bottom: 0.5rem;
+    }
+
+    .showcase-header p {
+      font-size: 0.875rem;
+      color: var(--text-secondary);
+      max-width: 450px;
+      line-height: 1.5;
+    }
+
+    /* States Container Grid */
+    .states-grid {
+      display: flex;
+      gap: 3rem;
+      justify-content: center;
+      flex-wrap: wrap;
+      width: 100%;
+    }
+
+    /* State Column Wrapper */
+    .state-col {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 1.25rem;
+      flex: 1;
+      min-width: 130px;
+    }
+
+    /* Microphone Component Wrapper */
+    .mic-outer-wrapper {
+      position: relative;
+      width: 96px;
+      height: 96px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* ── STATE 1: IDLE ── */
+    .btn-idle {
+      width: 72px;
+      height: 72px;
+      border-radius: 50%;
+      background: var(--fill-danger);
+      border: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--on-danger);
+      box-shadow: var(--shadow-red);
+      transition: var(--transition-smooth);
+      position: relative;
+      z-index: 2;
+    }
+
+    .btn-idle:hover {
+      background: var(--fill-danger-hover);
+      transform: translateY(-2px);
+      box-shadow: var(--shadow-red-hover);
+    }
+
+    .btn-idle:active {
+      transform: scale(0.96) translateY(0);
+      box-shadow: var(--shadow-red);
+    }
+
+    .btn-idle svg {
+      width: 28px;
+      height: 28px;
+      transition: var(--transition-smooth);
+    }
+
+    .btn-idle:hover svg {
+      transform: scale(1.05);
+    }
+
+    /* ── STATE 2: LISTENING ── */
+    .pulse-ring {
+      position: absolute;
+      width: 96px;
+      height: 96px;
+      border-radius: 50%;
+      background: var(--bg-danger);
+      animation: ring-pulse-outer 1.8s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+      z-index: 1;
+    }
+
+    .pulse-ring-inner {
+      position: absolute;
+      width: 84px;
+      height: 84px;
+      border-radius: 50%;
+      background: var(--bg-danger-pulse);
+      animation: ring-pulse-inner 1.8s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+      animation-delay: 0.4s;
+      z-index: 1;
+    }
+
+    .btn-listening {
+      width: 72px;
+      height: 72px;
+      border-radius: 50%;
+      background: var(--fill-danger);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 3px;
+      box-shadow: var(--shadow-red-hover);
+      z-index: 2;
+      animation: button-breathe 2s ease-in-out infinite alternate;
+    }
+
+    /* Sound Equalizer Bars */
+    .bar {
+      width: 3px;
+      background: var(--on-danger);
+      border-radius: 4px;
+      transform-origin: bottom;
+    }
+
+    .bar-1 { height: 14px; animation: wave 0.85s ease-in-out infinite; }
+    .bar-2 { height: 22px; animation: wave 0.85s ease-in-out infinite 0.15s; }
+    .bar-3 { height: 10px; animation: wave 0.85s ease-in-out infinite 0.35s; }
+    .bar-4 { height: 26px; animation: wave 0.85s ease-in-out infinite 0.1s; }
+    .bar-5 { height: 16px; animation: wave 0.85s ease-in-out infinite 0.25s; }
+
+    /* ── STATE 3: PROCESSING ── */
+    .btn-processing {
+      width: 72px;
+      height: 72px;
+      border-radius: 50%;
+      background: var(--fill-secondary);
+      border: 0.5px solid var(--border-strong);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      box-shadow: var(--shadow-sm);
+      z-index: 2;
+    }
+
+    /* Continuous outer spinner track overlay */
+    .spinner-ring {
+      position: absolute;
+      inset: -5px;
+      border-radius: 50%;
+      border: 2px solid transparent;
+      border-top-color: var(--fill-danger);
+      border-right-color: var(--fill-danger);
+      animation: spin 0.85s cubic-bezier(0.5, 0.1, 0.4, 0.9) infinite;
+    }
+
+    .spinner-ring-subtle {
+      position: absolute;
+      inset: -5px;
+      border-radius: 50%;
+      border: 2px solid var(--border-strong);
+      opacity: 0.6;
+    }
+
+    .processing-spinner {
+      width: 20px;
+      height: 20px;
+      border: 2.5px solid var(--border-strong);
+      border-top-color: var(--text-primary);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    /* Label Typography */
+    .state-label {
+      font-size: 0.8125rem;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      transition: var(--transition-smooth);
+    }
+
+    .label-idle { color: var(--text-secondary); }
+    .label-listening { color: var(--text-danger); text-shadow: 0 0 10px rgba(239, 68, 68, 0.08); }
+    .label-processing { color: var(--text-secondary); }
+
+    /* Playground Interactive Panel */
+    .hint-box {
+      width: 100%;
+      background: var(--fill-secondary);
+      border-radius: 16px;
+      padding: 1.25rem 1.5rem;
+      text-align: center;
+      transition: var(--transition-smooth);
+      border: 1px dashed var(--border-strong);
+    }
+
+    .hint-text {
+      font-size: 0.875rem;
+      color: var(--text-secondary);
+      font-weight: 500;
+      line-height: 1.5;
+    }
+
+    .preview-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.375rem 0.75rem;
+      background: rgba(239, 68, 68, 0.1);
+      color: var(--text-danger);
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      border-radius: 30px;
+      margin-top: 1rem;
+      border: 1px solid rgba(239, 68, 68, 0.1);
+      display: none;
+      animation: fade-in 0.3s ease-out forwards;
+    }
+
+    /* Animation Keyframes */
+    @keyframes ring-pulse-outer {
+      0% { transform: scale(0.75); opacity: 0.8; }
+      100% { transform: scale(1.35); opacity: 0; }
+    }
+
+    @keyframes ring-pulse-inner {
+      0% { transform: scale(0.85); opacity: 0.9; }
+      100% { transform: scale(1.2); opacity: 0; }
+    }
+
+    @keyframes button-breathe {
+      0% { transform: scale(1); }
+      100% { transform: scale(1.04); }
+    }
+
+    @keyframes wave {
+      0%, 100% { transform: scaleY(0.4); }
+      50% { transform: scaleY(1.0); }
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    @keyframes fade-in {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="showcase-card">
+    <div class="showcase-header">
+      <h1>Voice Consultation Component</h1>
+      <p>Microphone state indicators for the automated prescription system.</p>
+    </div>
+
+    <div class="states-grid">
+      <!-- State 1: Idle -->
+      <div class="state-col">
+        <div class="mic-outer-wrapper">
+          <button onclick="setState('listening')" class="btn-idle" aria-label="Start recording" title="Click to start listening">
+            <!-- Inline SVG for robust render without external assets -->
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/>
+              <path d="M19 10v1a7 7 0 0 1-14 0v-1"/>
+              <line x1="12" x2="12" y1="19" y2="22"/>
+            </svg>
+          </button>
+        </div>
+        <span class="state-label label-idle">Idle</span>
+      </div>
+
+      <!-- State 2: Listening -->
+      <div class="state-col">
+        <div class="mic-outer-wrapper">
+          <div class="pulse-ring"></div>
+          <div class="pulse-ring-inner"></div>
+          <div class="btn-listening">
+            <span class="bar bar-1"></span>
+            <span class="bar bar-2"></span>
+            <span class="bar bar-3"></span>
+            <span class="bar bar-4"></span>
+            <span class="bar bar-5"></span>
+          </div>
+        </div>
+        <span class="state-label label-listening">Listening</span>
+      </div>
+
+      <!-- State 3: Processing -->
+      <div class="state-col">
+        <div class="mic-outer-wrapper">
+          <div class="spinner-ring-subtle"></div>
+          <div class="spinner-ring"></div>
+          <div class="btn-processing">
+            <div class="processing-spinner"></div>
+          </div>
+        </div>
+        <span class="state-label label-processing">Processing</span>
+      </div>
+    </div>
+
+    <!-- Interactive preview helper -->
+    <div class="hint-box">
+      <span id="hint" class="hint-text">Tap the idle microphone button to preview the voice consultation flow.</span>
+      <br>
+      <div id="badge" class="preview-badge">
+        <span style="display:inline-block; width:6px; height:6px; border-radius:50%; background:#EF4444; animation:spin 1s infinite;"></span>
+        Mic Live Access Active
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let flowTimeout1, flowTimeout2;
+    function setState(s) {
+      // Clear previous timeouts if button is clicked repeatedly
+      clearTimeout(flowTimeout1);
+      clearTimeout(flowTimeout2);
+
+      const hint = document.getElementById('hint');
+      const badge = document.getElementById('badge');
+      
+      if (s === 'listening') {
+        hint.style.color = 'var(--text-danger)';
+        hint.innerHTML = '<strong>Live Listening Preview:</strong> Pulsing wave rings are active and the microphone is dynamically capturing speech waveforms.';
+        badge.style.display = 'inline-flex';
+        
+        // Transition to processing after 4 seconds
+        flowTimeout1 = setTimeout(() => {
+          hint.style.color = 'var(--text-secondary)';
+          hint.innerHTML = '<strong>Processing Dictation:</strong> Audio stream successfully captured. Analyzing consultation using clinical LLM model...';
+          badge.style.display = 'none';
+          
+          // Revert to default hint after 3.5 seconds
+          flowTimeout2 = setTimeout(() => {
+            hint.innerHTML = 'Tap the idle microphone button to preview the voice consultation flow.';
+          }, 3500);
+        }, 4000);
+      }
+    }
+  </script>
+</body>
+</html>

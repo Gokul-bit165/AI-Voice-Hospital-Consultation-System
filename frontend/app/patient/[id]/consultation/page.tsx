@@ -252,7 +252,9 @@ export default function ConsultationPage({
   const [agentRunning, setAgentRunning] = useState(false);
   const [seenFirstAgentAnswer, setSeenFirstAgentAnswer] = useState(false);
   const [chatbotDictating, setChatbotDictating] = useState(false);
-  const chatbotRecognitionRef = useRef<any>(null);
+  const [chatbotLoading, setChatbotLoading] = useState(false);
+  const chatbotRecorderRef = useRef<MediaRecorder | null>(null);
+  const chatbotChunksRef = useRef<Blob[]>([]);
   const abortRef = useRef<AbortController | null>(null);
   const ragEndRef = useRef<HTMLDivElement>(null);
 
@@ -540,51 +542,60 @@ export default function ConsultationPage({
       abortRef.current = null;
     }
   };
+  const parseChatbotDictation = async (blob: Blob) => {
+    setChatbotLoading(true);
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(blob);
+        reader.onloadend = async () => {
+          try {
+            const b64 = (reader.result as string).split(",")[1];
+            const res = await api.transcribeAudio(b64, "webm");
+            if (res.transcript) {
+              setAgentInput(res.transcript);
+            }
+            resolve();
+          } catch (err) {
+            reject(err);
+          }
+        };
+        reader.onerror = reject;
+      });
+    } catch (err: any) {
+      console.error("Chatbot dictation failed:", err);
+    } finally {
+      setChatbotLoading(false);
+    }
+  };
 
-  const toggleChatbotDictation = () => {
+  const toggleChatbotDictation = async () => {
     if (chatbotDictating) {
-      chatbotRecognitionRef.current?.stop();
+      chatbotRecorderRef.current?.stop();
       setChatbotDictating(false);
       return;
     }
 
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      alert("Speech recognition is not supported in this browser. Please use Google Chrome.");
-      return;
-    }
-
     try {
-      const rec = new SpeechRecognition();
-      rec.continuous = true;
-      rec.interimResults = true;
-      rec.lang = "en-US";
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream, { mimeType: "audio/webm" });
+      chatbotRecorderRef.current = recorder;
+      chatbotChunksRef.current = [];
 
-      rec.onstart = () => {
-        setChatbotDictating(true);
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) chatbotChunksRef.current.push(e.data);
       };
 
-      rec.onresult = (event: any) => {
-        let transcript = "";
-        for (let i = 0; i < event.results.length; ++i) {
-          transcript += event.results[i][0].transcript;
-        }
-        setAgentInput(transcript);
+      recorder.onstop = async () => {
+        const audioBlob = new Blob(chatbotChunksRef.current, { type: "audio/webm" });
+        await parseChatbotDictation(audioBlob);
+        stream.getTracks().forEach((t) => t.stop());
       };
 
-      rec.onerror = (e: any) => {
-        console.error("Chatbot speech recognition error:", e);
-        setChatbotDictating(false);
-      };
-
-      rec.onend = () => {
-        setChatbotDictating(false);
-      };
-
-      rec.start();
-      chatbotRecognitionRef.current = rec;
+      recorder.start();
+      setChatbotDictating(true);
     } catch (err) {
-      console.error("Failed to start chatbot SpeechRecognition:", err);
+      alert("Microphone access required for chatbot voice input.");
       setChatbotDictating(false);
     }
   };
@@ -593,7 +604,7 @@ export default function ConsultationPage({
     e.preventDefault();
     if (!agentInput.trim()) return;
     if (chatbotDictating) {
-      chatbotRecognitionRef.current?.stop();
+      chatbotRecorderRef.current?.stop();
       setChatbotDictating(false);
     }
     const q = agentInput;
@@ -607,7 +618,6 @@ export default function ConsultationPage({
   };
 
   const copyMessage = (text: string) => navigator.clipboard.writeText(text);
-
   // ─── Print/Save helpers ───────────────────────────────────────────────────
   const handlePrint = async () => {
     if (!activeVisit) return;
@@ -794,16 +804,6 @@ export default function ConsultationPage({
               <div className="flex-1 flex flex-col h-full items-stretch justify-center p-2 space-y-6">
                 <div className="flex-1 min-h-[48vh] flex flex-col items-center justify-between p-8 border border-[#E5E7EB] bg-white rounded-2xl shadow-sm text-center">
                   
-                  {/* Header info */}
-                  <div className="space-y-2 max-w-xl">
-                    <h2 className="text-sm font-bold text-[#111827] uppercase tracking-wider">
-                      Active Voice Dictation Workspace
-                    </h2>
-                    <p className="text-xs text-[#6B7280]">
-                      Speak medication names, dosages, and clinical instructions. The system transcribes in real time and automatically structures the medical prescription.
-                    </p>
-                  </div>
-
                   {/* Dynamic Voice Dictation Workspace */}
                   <div className="flex-1 w-full flex flex-col items-center justify-center py-6 max-w-2xl min-h-[30vh]">
                     {dictationLoading ? (
@@ -1253,22 +1253,28 @@ export default function ConsultationPage({
                   type="text"
                   value={agentInput}
                   onChange={(e) => setAgentInput(e.target.value)}
-                  placeholder="Ask the clinical agent…"
-                  disabled={agentRunning || chatbotDictating}
+                  placeholder={chatbotLoading ? "Transcribing voice..." : "Ask the clinical agent…"}
+                  disabled={agentRunning || chatbotDictating || chatbotLoading}
                   className="w-full pl-3 pr-9 py-2 rounded-xl text-xs bg-[#F8FAFC] border border-[#E5E7EB] text-[#111827] placeholder-[#9CA3AF] focus:outline-none focus:border-[#2563EB] focus:ring-1 focus:ring-[#2563EB] transition-colors disabled:opacity-60"
                 />
                 <button
                   type="button"
                   onClick={toggleChatbotDictation}
-                  disabled={agentRunning}
+                  disabled={agentRunning || chatbotLoading}
                   className={`absolute right-2.5 p-1 rounded-lg transition-all cursor-pointer ${
                     chatbotDictating
                       ? "text-[#DC2626] bg-red-50 animate-pulse hover:bg-red-100"
                       : "text-[#6B7280] hover:text-[#111827] hover:bg-slate-100"
                   }`}
-                  title={chatbotDictating ? "Stop Voice Input" : "Start Voice Input"}
+                  title={chatbotLoading ? "Transcribing" : chatbotDictating ? "Stop Voice Input" : "Start Voice Input"}
                 >
-                  {chatbotDictating ? <MicOff className="h-3.5 w-3.5" /> : <Mic className="h-3.5 w-3.5" />}
+                  {chatbotLoading ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin text-[#2563EB]" />
+                  ) : chatbotDictating ? (
+                    <MicOff className="h-3.5 w-3.5" />
+                  ) : (
+                    <Mic className="h-3.5 w-3.5" />
+                  )}
                 </button>
               </div>
               {agentRunning ? (
@@ -1277,7 +1283,7 @@ export default function ConsultationPage({
                   <Square className="h-4 w-4 fill-white" />
                 </button>
               ) : (
-                <button type="submit" disabled={!agentInput.trim() || chatbotDictating}
+                <button type="submit" disabled={!agentInput.trim() || chatbotDictating || chatbotLoading}
                   className="p-2 bg-[#2563EB] hover:bg-blue-700 rounded-xl text-white transition-all cursor-pointer active:scale-95 disabled:opacity-40 flex items-center justify-center shadow-sm">
                   <Send className="h-4 w-4" />
                 </button>

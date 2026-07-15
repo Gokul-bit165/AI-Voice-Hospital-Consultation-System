@@ -6,7 +6,7 @@ from backend.app.core.deps import require_any_role
 from backend.app.core.prompts import load_prompt_template
 from backend.app.services.voice import voice_service
 from backend.app.services.llm_client import llm_client
-from backend.app.schemas.schemas import VoiceCommandRequest, VoiceCommandResponse
+from backend.app.schemas.schemas import VoiceCommandRequest, VoiceCommandResponse, AudioTranscribeRequest, AudioTranscribeResponse
 
 router = APIRouter()
 
@@ -54,3 +54,22 @@ async def process_voice_command(
         confidence=classified.confidence,
         transcript=transcript
     )
+
+@router.post("/transcribe", response_model=AudioTranscribeResponse)
+async def transcribe_audio_endpoint(
+    req: AudioTranscribeRequest,
+    current_user = Depends(require_any_role)
+):
+    """
+    Transcribes raw base64 audio dictation into text using Whisper/Gemini.
+    """
+    try:
+        audio_bytes = base64.b64decode(req.audio_base64)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid base64 audio data")
+
+    transcript = voice_service.transcribe_audio(audio_bytes, file_format=req.file_format or "wav")
+    if not transcript:
+        raise HTTPException(status_code=400, detail="Could not transcribe audio")
+
+    return AudioTranscribeResponse(transcript=transcript)

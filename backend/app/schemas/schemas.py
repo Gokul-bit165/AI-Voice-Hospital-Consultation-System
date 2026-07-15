@@ -213,6 +213,13 @@ class VoiceCommandResponse(BaseModel):
     confidence: float
     transcript: str
 
+class AudioTranscribeRequest(BaseModel):
+    audio_base64: str
+    file_format: Optional[str] = "wav"
+
+class AudioTranscribeResponse(BaseModel):
+    transcript: str
+
 # Audit Log
 class AuditLogResponse(BaseModel):
     id: str

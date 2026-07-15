@@ -59,7 +59,9 @@ export default function StandaloneChatPage({
   const [agentRunning, setAgentRunning] = useState(false);
   const [seenFirstAgentAnswer, setSeenFirstAgentAnswer] = useState(false);
   const [chatbotDictating, setChatbotDictating] = useState(false);
-  const chatbotRecognitionRef = useRef<any>(null);
+  const [chatbotLoading, setChatbotLoading] = useState(false);
+  const chatbotRecorderRef = useRef<MediaRecorder | null>(null);
+  const chatbotChunksRef = useRef<Blob[]>([]);
   const abortRef = useRef<AbortController | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
@@ -190,50 +192,62 @@ export default function StandaloneChatPage({
     }
   };
 
-  const toggleChatbotDictation = () => {
+
+
+  const parseChatbotDictation = async (blob: Blob) => {
+    setChatbotLoading(true);
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(blob);
+        reader.onloadend = async () => {
+          try {
+            const b64 = (reader.result as string).split(",")[1];
+            const res = await api.transcribeAudio(b64, "webm");
+            if (res.transcript) {
+              setAgentInput(res.transcript);
+            }
+            resolve();
+          } catch (err) {
+            reject(err);
+          }
+        };
+        reader.onerror = reject;
+      });
+    } catch (err: any) {
+      console.error("Chatbot dictation failed:", err);
+    } finally {
+      setChatbotLoading(false);
+    }
+  };
+
+  const toggleChatbotDictation = async () => {
     if (chatbotDictating) {
-      chatbotRecognitionRef.current?.stop();
+      chatbotRecorderRef.current?.stop();
       setChatbotDictating(false);
       return;
     }
 
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      alert("Speech recognition is not supported in this browser. Please use Google Chrome.");
-      return;
-    }
-
     try {
-      const rec = new SpeechRecognition();
-      rec.continuous = true;
-      rec.interimResults = true;
-      rec.lang = "en-US";
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream, { mimeType: "audio/webm" });
+      chatbotRecorderRef.current = recorder;
+      chatbotChunksRef.current = [];
 
-      rec.onstart = () => {
-        setChatbotDictating(true);
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) chatbotChunksRef.current.push(e.data);
       };
 
-      rec.onresult = (event: any) => {
-        let transcript = "";
-        for (let i = 0; i < event.results.length; ++i) {
-          transcript += event.results[i][0].transcript;
-        }
-        setAgentInput(transcript);
+      recorder.onstop = async () => {
+        const audioBlob = new Blob(chatbotChunksRef.current, { type: "audio/webm" });
+        await parseChatbotDictation(audioBlob);
+        stream.getTracks().forEach((t) => t.stop());
       };
 
-      rec.onerror = (e: any) => {
-        console.error("Chatbot speech recognition error:", e);
-        setChatbotDictating(false);
-      };
-
-      rec.onend = () => {
-        setChatbotDictating(false);
-      };
-
-      rec.start();
-      chatbotRecognitionRef.current = rec;
+      recorder.start();
+      setChatbotDictating(true);
     } catch (err) {
-      console.error("Failed to start chatbot SpeechRecognition:", err);
+      alert("Microphone access required for chatbot voice input.");
       setChatbotDictating(false);
     }
   };
@@ -242,7 +256,7 @@ export default function StandaloneChatPage({
     e.preventDefault();
     if (!agentInput.trim()) return;
     if (chatbotDictating) {
-      chatbotRecognitionRef.current?.stop();
+      chatbotRecorderRef.current?.stop();
       setChatbotDictating(false);
     }
     const q = agentInput;
@@ -351,22 +365,28 @@ export default function StandaloneChatPage({
                 type="text"
                 value={agentInput}
                 onChange={(e) => setAgentInput(e.target.value)}
-                placeholder="Ask the clinical agent details, analyze logs, or check safety..."
-                disabled={agentRunning || chatbotDictating}
+                placeholder={chatbotLoading ? "Transcribing voice..." : "Ask the clinical agent details, analyze logs, or check safety..."}
+                disabled={agentRunning || chatbotDictating || chatbotLoading}
                 className="w-full pl-4 pr-12 py-3 rounded-xl text-xs bg-[#F8FAFC] border border-[#E5E7EB] text-[#111827] placeholder-[#9CA3AF] focus:outline-none focus:border-[#2563EB] focus:ring-1 focus:ring-[#2563EB] transition-colors disabled:opacity-60 shadow-sm"
               />
               <button
                 type="button"
                 onClick={toggleChatbotDictation}
-                disabled={agentRunning}
+                disabled={agentRunning || chatbotLoading}
                 className={`absolute right-3.5 p-1.5 rounded-lg transition-all cursor-pointer ${
                   chatbotDictating
                     ? "text-[#DC2626] bg-red-50 animate-pulse hover:bg-red-100"
                     : "text-[#6B7280] hover:text-[#111827] hover:bg-slate-100"
                 }`}
-                title={chatbotDictating ? "Stop Voice Input" : "Start Voice Input"}
+                title={chatbotLoading ? "Transcribing" : chatbotDictating ? "Stop Voice Input" : "Start Voice Input"}
               >
-                {chatbotDictating ? <MicOff className="h-4.5 w-4.5" /> : <Mic className="h-4.5 w-4.5" />}
+                {chatbotLoading ? (
+                  <Loader2 className="h-4.5 w-4.5 animate-spin text-[#2563EB]" />
+                ) : chatbotDictating ? (
+                  <MicOff className="h-4.5 w-4.5" />
+                ) : (
+                  <Mic className="h-4.5 w-4.5" />
+                )}
               </button>
             </div>
             {agentRunning ? (
@@ -380,7 +400,7 @@ export default function StandaloneChatPage({
             ) : (
               <button
                 type="submit"
-                disabled={!agentInput.trim() || chatbotDictating}
+                disabled={!agentInput.trim() || chatbotDictating || chatbotLoading}
                 className="p-3 bg-[#2563EB] hover:bg-blue-700 rounded-xl text-white transition-all cursor-pointer active:scale-95 disabled:opacity-40 flex items-center justify-center shadow-md"
               >
                 <Send className="h-5 w-5" />
