@@ -1,5 +1,21 @@
 from datetime import datetime, timedelta
 from typing import Any, Union
+import bcrypt
+# Monkeypatch bcrypt to address passlib compatibility issue with bcrypt 4.x
+if not hasattr(bcrypt, "__about__"):
+    class MockAbout:
+        __version__ = getattr(bcrypt, "__version__", "4.0.0")
+    bcrypt.__about__ = MockAbout()
+
+# Patch bcrypt.hashpw to truncate inputs > 72 bytes.
+# This prevents passlib from throwing a ValueError during its wrap-bug check.
+orig_hashpw = bcrypt.hashpw
+def patched_hashpw(password: bytes, salt: bytes) -> bytes:
+    if len(password) > 72:
+        password = password[:72]
+    return orig_hashpw(password, salt)
+bcrypt.hashpw = patched_hashpw
+
 from jose import jwt
 from passlib.context import CryptContext
 from backend.app.core.config import settings

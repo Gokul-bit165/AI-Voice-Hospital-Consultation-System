@@ -46,9 +46,6 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] flex flex-col items-center justify-center p-4 antialiased text-[#111827]" style={{ fontFamily: "'Inter', sans-serif" }}>
-      <head>
-        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
-      </head>
 
       <div className="w-full max-w-md bg-white border border-[#E5E7EB] rounded-2xl shadow-sm overflow-hidden p-8 z-10">
         <div className="text-center mb-8">

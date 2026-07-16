@@ -1,14 +1,24 @@
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from backend.app.core.config import settings
+from backend.app.core.api_keys import load_api_keys
 
 # Import routers
 from backend.app.api.v1.endpoints import auth, patients, records, visits, prescriptions, voice_command, rag, admin
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup: Load API keys into cache
+    print("FastAPI starting: loading dynamic API keys...")
+    await load_api_keys()
+    yield
+
 app = FastAPI(
     title=settings.PROJECT_NAME,
     description="Backend API for the AI Voice Hospital Consultation System prototype.",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan
 )
 
 # Set CORS origins

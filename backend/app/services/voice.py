@@ -73,49 +73,60 @@ class VoiceService:
     def transcribe_audio(self, audio_bytes: bytes, file_format: str = "wav") -> str:
         """
         Transcribe audio bytes.
-        Priority: 1) Groq whisper-large-v3-turbo  2) Gemini  3) mock fallback
+        Priority: 1) Groq whisper-large-v3-turbo (dynamic / fallback)
+                  2) Gemini (dynamic / fallback)
+                  3) mock fallback
         """
         if not audio_bytes:
             return ""
 
+        from backend.app.core.api_keys import api_key_manager
+
+        # Gather medicines list for prompting
+        prompt_str = ", ".join(MEDICINES_LIST) if MEDICINES_LIST else ""
+        if len(prompt_str) > 850:
+            prompt_str = prompt_str[:850].rsplit(',', 1)[0]
+
         # ── Method 1: Groq whisper-large-v3 ─────────────────────────────
-        # Groq exposes an OpenAI-compatible /audio/transcriptions endpoint.
-        # Fastest option — typical latency ~300 ms for a short dictation clip.
-        if self.groq_client:
+        groq_keys = api_key_manager.get_active_key_values("groq")
+        if not groq_keys and settings.GROQ_API_KEY:
+            groq_keys = [settings.GROQ_API_KEY]
+
+        for key in groq_keys:
             try:
+                client = OpenAI(
+                    api_key=key,
+                    base_url="https://api.groq.com/openai/v1"
+                )
                 audio_file = io.BytesIO(audio_bytes)
-                # Groq requires a filename with extension so it knows the codec
                 audio_file.name = f"dictation.{file_format}"
                 
-                # Build initial prompt from medicine list
-                prompt_str = ", ".join(MEDICINES_LIST) if MEDICINES_LIST else ""
-                
-                # Groq Whisper has a hard prompt limit of 896 characters
-                if len(prompt_str) > 850:
-                    prompt_str = prompt_str[:850].rsplit(',', 1)[0]
-                
-                transcript = self.groq_client.audio.transcriptions.create(
+                transcript = client.audio.transcriptions.create(
                     model="whisper-large-v3-turbo",
                     file=audio_file,
                     response_format="text",
                     language="en",
                     prompt=prompt_str
                 )
-                # Groq returns plain text when response_format="text"
                 raw_result = transcript if isinstance(transcript, str) else transcript.text
-                
                 raw_result = raw_result.strip()
                 raw_tx, corrected_tx = correct_medicine_names(raw_result)
                 
                 print(f"Groq Whisper transcription successful: {corrected_tx[:80]}…")
                 return corrected_tx
             except Exception as e:
-                print(f"Groq Whisper transcription failed: {e}. Trying Gemini fallback…")
+                print(f"Groq Whisper key failed ({key[:10]}...): {e}")
+                api_key_manager.increment_fail_count("groq", key)
 
         # ── Method 2: Gemini Audio Understanding ──────────────────────────────
-        if settings.GEMINI_API_KEY:
+        gemini_keys = api_key_manager.get_active_key_values("gemini")
+        if not gemini_keys and settings.GEMINI_API_KEY:
+            gemini_keys = [settings.GEMINI_API_KEY]
+
+        for key in gemini_keys:
             temp_filepath = None
             try:
+                genai.configure(api_key=key)
                 temp_filename = f"temp_{uuid.uuid4()}.{file_format}"
                 temp_filepath = os.path.join(settings.STORAGE_DIR, temp_filename)
                 with open(temp_filepath, "wb") as f:
@@ -135,13 +146,14 @@ class VoiceService:
                     pass
                 return response.text.strip()
             except Exception as e:
-                print(f"Gemini transcription failed: {e}")
+                print(f"Gemini transcription key failed ({key[:10]}...): {e}")
+                api_key_manager.increment_fail_count("gemini", key)
             finally:
                 if temp_filepath and os.path.exists(temp_filepath):
                     os.remove(temp_filepath)
 
         # ── Method 3: Mock fallback ────────────────────────────────────────────
-        print("Warning: No STT API key configured. Using mock transcription.")
+        print("Warning: No active dynamic or static STT key succeeded. Using mock transcription.")
         return "Paracetamol 500 milligram twice daily for five days after food."
 
 

@@ -27,37 +27,65 @@ class PluggableEmbeddingProvider:
         if not texts:
             return []
             
-        if self.provider == "openai" and self.openai_client:
-            try:
-                model_name = "openai/text-embedding-3-small" if self.is_openrouter else "text-embedding-3-small"
-                response = self.openai_client.embeddings.create(
-                    input=texts,
-                    model=model_name
-                )
-                return [data.embedding for data in response.data]
-            except Exception as e:
-                print(f"OpenAI Embeddings error: {e}. Trying fallback...")
+        from backend.app.core.api_keys import api_key_manager
+
+        # ── OpenAI / OpenRouter Embeddings ─────────────────────────────
+        if self.provider == "openai":
+            dyn_keys = api_key_manager.get_active_key_values("openai")
+            dyn_or_keys = api_key_manager.get_active_key_values("openrouter")
+            
+            keys_to_try = []
+            for k in dyn_keys:
+                keys_to_try.append((k, k.startswith("sk-or-")))
+            for k in dyn_or_keys:
+                keys_to_try.append((k, True))
                 
-        if settings.GEMINI_API_KEY:
+            if not keys_to_try and settings.OPENAI_API_KEY:
+                keys_to_try.append((settings.OPENAI_API_KEY, settings.OPENAI_API_KEY.startswith("sk-or-")))
+
+            for key, is_or in keys_to_try:
+                try:
+                    if is_or:
+                        client = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=key)
+                        model_name = "openai/text-embedding-3-small"
+                    else:
+                        client = OpenAI(api_key=key)
+                        model_name = "text-embedding-3-small"
+
+                    response = client.embeddings.create(
+                        input=texts,
+                        model=model_name
+                    )
+                    return [data.embedding for data in response.data]
+                except Exception as e:
+                    print(f"OpenAI Embeddings key failed ({key[:10]}...): {e}")
+                    api_key_manager.increment_fail_count("openai" if not is_or else "openrouter", key)
+
+        # ── Gemini Embeddings ─────────────────────────────
+        gemini_keys = api_key_manager.get_active_key_values("gemini")
+        keys_to_try = list(gemini_keys)
+        if not keys_to_try and settings.GEMINI_API_KEY:
+            keys_to_try.append(settings.GEMINI_API_KEY)
+
+        for key in keys_to_try:
             try:
-                # Use text-embedding-004
+                genai.configure(api_key=key)
                 response = genai.embed_content(
                     model="models/text-embedding-004",
                     content=texts
                 )
-                # Response is dictionary with 'embedding': [{'values': [...]}, ...]
                 if "embedding" in response:
                     return [emb for emb in response["embedding"]]
                 elif "embeddings" in response:
                     return [emb for emb in response["embeddings"]]
                 else:
-                    # Let's extract values if structured differently
                     return [emb["values"] for emb in response.get("embedding", [])]
             except Exception as e:
-                print(f"Gemini Embeddings error: {e}")
+                print(f"Gemini Embeddings key failed ({key[:10]}...): {e}")
+                api_key_manager.increment_fail_count("gemini", key)
 
         # Final Fallback mock embeddings (1536 float values) if no API key is available
-        print("Warning: No Embedding API keys configured. Using mock embeddings.")
+        print("Warning: No Embedding API keys configured or all failed. Using mock embeddings.")
         mock_emb = [0.1] * 1536
         return [mock_emb for _ in texts]
 

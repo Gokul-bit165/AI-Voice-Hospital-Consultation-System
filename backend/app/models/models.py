@@ -1,5 +1,5 @@
 import uuid
-from sqlalchemy import Column, String, Date, DateTime, ForeignKey, Text, Float, JSON, Index, func
+from sqlalchemy import Column, String, Date, DateTime, ForeignKey, Text, Float, JSON, Index, func, Boolean, Integer
 from sqlalchemy.orm import relationship
 from backend.app.core.database import Base
 from backend.app.core.encryption import encrypt_text, decrypt_text, encrypt_json, decrypt_json
@@ -273,3 +273,24 @@ class AuditLog(Base):
     entity_id = Column(String(36), nullable=False)
     ip_address = Column(String(50), nullable=True)
     timestamp = Column(DateTime, default=func.now())
+
+class ApiKey(Base):
+    __tablename__ = "api_keys"
+    
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    service = Column(String(50), nullable=False) # 'openai', 'gemini', 'groq', 'openrouter'
+    name = Column(String(100), nullable=True)
+    _key_value = Column("key_value", Text, nullable=False) # Encrypted
+    priority = Column(Integer, nullable=False, default=1)
+    is_active = Column(Boolean, nullable=False, default=True)
+    fail_count = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime, default=func.now())
+
+    @property
+    def key_value(self):
+        return decrypt_text(self._key_value)
+        
+    @key_value.setter
+    def key_value(self, value):
+        self._key_value = encrypt_text(value)
+

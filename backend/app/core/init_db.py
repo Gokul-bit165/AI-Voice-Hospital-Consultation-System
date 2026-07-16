@@ -1,6 +1,6 @@
 from backend.app.core.database import Base, engine
 # Import all models to ensure they are registered on Base before creation
-from backend.app.models.models import Doctor, Patient, MedicalRecord, OCRRecord, Embedding, Visit, Prescription, Conversation, Timeline, AuditLog
+from backend.app.models.models import Doctor, Patient, MedicalRecord, OCRRecord, Embedding, Visit, Prescription, Conversation, Timeline, AuditLog, ApiKey
 
 async def create_tables():
     """

@@ -253,3 +253,31 @@ class AgentQueryResponse(BaseModel):
     tool_calls_made: List[str] = []
     is_grounded: bool = False          # True if patient-specific tools were used
     has_safety_disclaimer: bool = False # True if drug/allergy tools fired
+
+# API Key Management
+class ApiKeyCreate(BaseModel):
+    service: str # 'openai', 'gemini', 'groq', 'openrouter'
+    name: Optional[str] = None
+    key_value: str
+    priority: Optional[int] = 1
+    is_active: Optional[bool] = True
+
+class ApiKeyUpdate(BaseModel):
+    name: Optional[str] = None
+    key_value: Optional[str] = None
+    priority: Optional[int] = None
+    is_active: Optional[bool] = None
+
+class ApiKeyResponse(BaseModel):
+    id: str
+    service: str
+    name: Optional[str] = None
+    masked_key: str
+    priority: int
+    is_active: bool
+    fail_count: int
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+

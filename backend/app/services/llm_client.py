@@ -49,52 +49,92 @@ class LLMClient:
     def generate_text(self, prompt: str, system_instruction: Optional[str] = None, response_format_json: bool = False) -> str:
         """
         Generates text using the configured LLM provider.
+        Supports dynamic API key rotation and same-model fallback.
         """
+        from backend.app.core.api_keys import api_key_manager
+
         if self.provider == "openai":
-            client = self.get_openai_client()
-            messages = []
-            if system_instruction:
-                messages.append({"role": "system", "content": system_instruction})
-            messages.append({"role": "user", "content": prompt})
+            dyn_keys = api_key_manager.get_active_key_values("openai")
+            dyn_or_keys = api_key_manager.get_active_key_values("openrouter")
             
-            kwargs = {}
-            if response_format_json:
-                kwargs["response_format"] = {"type": "json_object"}
+            keys_to_try = []
+            for k in dyn_keys:
+                keys_to_try.append((k, k.startswith("sk-or-")))
+            for k in dyn_or_keys:
+                keys_to_try.append((k, True))
                 
-            model_name = "openai/gpt-4o-mini" if self.is_openrouter else "gpt-4o-mini"
-            if self.is_openrouter:
-                # Restrict max_tokens so low-balance free OpenRouter accounts don't get blocked
-                kwargs["max_tokens"] = 500
-            
-            response = client.chat.completions.create(
-                model=model_name,
-                messages=messages,
-                temperature=0.2,
-                **kwargs
-            )
-            return response.choices[0].message.content or ""
-            
+            if not keys_to_try and settings.OPENAI_API_KEY:
+                keys_to_try.append((settings.OPENAI_API_KEY, settings.OPENAI_API_KEY.startswith("sk-or-")))
+
+            if not keys_to_try:
+                raise ValueError("No OpenAI/OpenRouter API keys configured.")
+
+            last_exc = None
+            for key, is_or in keys_to_try:
+                try:
+                    if is_or:
+                        client = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=key)
+                        model_name = "openai/gpt-4o-mini"
+                    else:
+                        client = OpenAI(api_key=key)
+                        model_name = "gpt-4o-mini"
+
+                    messages = []
+                    if system_instruction:
+                        messages.append({"role": "system", "content": system_instruction})
+                    messages.append({"role": "user", "content": prompt})
+                    
+                    kwargs = {}
+                    if response_format_json:
+                        kwargs["response_format"] = {"type": "json_object"}
+                    if is_or:
+                        kwargs["max_tokens"] = 500
+
+                    response = client.chat.completions.create(
+                        model=model_name,
+                        messages=messages,
+                        temperature=0.2,
+                        **kwargs
+                    )
+                    return response.choices[0].message.content or ""
+                except Exception as e:
+                    print(f"OpenAI key failed ({key[:10]}...): {e}")
+                    api_key_manager.increment_fail_count("openai" if not is_or else "openrouter", key)
+                    last_exc = e
+            raise last_exc
+
         elif self.provider == "gemini":
-            if not self._gemini_initialized:
-                raise ValueError("Gemini API not configured. Please set GEMINI_API_KEY.")
-            
-            # Using gemini-1.5-flash for speed and reliability
-            model_name = "gemini-1.5-flash"
-            
-            generation_config = {"temperature": 0.2}
-            if response_format_json:
-                generation_config["response_mime_type"] = "application/json"
-                
-            model = genai.GenerativeModel(
-                model_name=model_name,
-                system_instruction=system_instruction
-            )
-            
-            response = model.generate_content(
-                prompt,
-                generation_config=generation_config
-            )
-            return response.text or ""
+            dyn_keys = api_key_manager.get_active_key_values("gemini")
+            keys_to_try = list(dyn_keys)
+            if not keys_to_try and settings.GEMINI_API_KEY:
+                keys_to_try.append(settings.GEMINI_API_KEY)
+
+            if not keys_to_try:
+                raise ValueError("No Gemini API keys configured.")
+
+            last_exc = None
+            for key in keys_to_try:
+                try:
+                    genai.configure(api_key=key)
+                    model_name = "gemini-1.5-flash"
+                    generation_config = {"temperature": 0.2}
+                    if response_format_json:
+                        generation_config["response_mime_type"] = "application/json"
+                        
+                    model = genai.GenerativeModel(
+                        model_name=model_name,
+                        system_instruction=system_instruction
+                    )
+                    response = model.generate_content(
+                        prompt,
+                        generation_config=generation_config
+                    )
+                    return response.text or ""
+                except Exception as e:
+                    print(f"Gemini key failed ({key[:10]}...): {e}")
+                    api_key_manager.increment_fail_count("gemini", key)
+                    last_exc = e
+            raise last_exc
             
         else:
             raise ValueError(f"Unsupported LLM provider: {self.provider}")

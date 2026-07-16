@@ -142,6 +142,18 @@ export interface AuditLog {
   timestamp: string;
 }
 
+export interface ApiKeyResponse {
+  id: string;
+  service: string;
+  name: string | null;
+  masked_key: string;
+  priority: number;
+  is_active: boolean;
+  fail_count: number;
+  created_at: string;
+}
+
+
 // Fetch helper that appends token
 async function fetchWithAuth(url: string, options: RequestInit = {}): Promise<any> {
   const headers = new Headers(options.headers || {});
@@ -425,6 +437,33 @@ export const api = {
       body: JSON.stringify(user),
     });
   },
+
+  async getApiKeys(): Promise<ApiKeyResponse[]> {
+    return fetchWithAuth(`${API_BASE_URL}/admin/api-keys`);
+  },
+
+  async createApiKey(keyData: { service: string; name?: string; key_value: string; priority?: number; is_active?: boolean }): Promise<ApiKeyResponse> {
+    return fetchWithAuth(`${API_BASE_URL}/admin/api-keys`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(keyData),
+    });
+  },
+
+  async updateApiKey(keyId: string, keyData: { name?: string; key_value?: string; priority?: number; is_active?: boolean }): Promise<ApiKeyResponse> {
+    return fetchWithAuth(`${API_BASE_URL}/admin/api-keys/${keyId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(keyData),
+    });
+  },
+
+  async deleteApiKey(keyId: string): Promise<{ detail: string }> {
+    return fetchWithAuth(`${API_BASE_URL}/admin/api-keys/${keyId}`, {
+      method: "DELETE",
+    });
+  },
+
 
   // ── Agent streaming ──────────────────────────────────────────────────────
   async streamAgentQuery(
