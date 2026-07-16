@@ -36,6 +36,12 @@ A dedicated, expanded layout for the AI Clinical Agent allows complex queries (e
 
 ---
 
+#### 6. Prescription Print Preview
+A print-ready digital preview of the clinical prescription. It compiles doctor coordinates, patient demographic cards, QR-code validation, detailed Rx guidelines (strength, frequency, duration, instructions), and signature lines in a clean, high-fidelity PDF format.
+![Prescription Print Preview](screenshots/06_prescription_print_preview.png)
+
+---
+
 ## 🔒 Core Principle — Patient Data Isolation
 
 This system implements strict patient-data partitioning at the vector-database layer to ensure maximum clinical privacy:
