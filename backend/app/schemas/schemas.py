@@ -75,6 +75,17 @@ class OCRStructuredData(BaseModel):
     lab_values: List[dict] = [] # e.g. [{"name": "HbA1c", "value": "6.5", "unit": "%"}]
     dates: List[str] = []
     doctor_names: List[str] = []
+    
+    # Demographic fields
+    blood_group: Optional[str] = None
+    full_name: Optional[str] = None
+    date_of_birth: Optional[str] = None
+    gender: Optional[str] = None
+    phone: Optional[str] = None
+    address: Optional[str] = None
+    allergies: List[str] = []
+    emergency_contact: Optional[str] = None
+    extraction_confidence: Optional[dict] = None
 
 class OCRRecordResponse(BaseModel):
     id: str

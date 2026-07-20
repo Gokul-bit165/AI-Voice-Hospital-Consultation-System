@@ -7,7 +7,7 @@ from sqlalchemy.future import select
 from sqlalchemy import or_
 
 from backend.app.core.deps import get_db_session, require_reception, require_any_role, require_admin
-from backend.app.models.models import Patient, Timeline, AuditLog, Doctor
+from backend.app.models.models import Patient, Timeline, AuditLog, Doctor, ProfileDiscrepancy
 from backend.app.schemas.schemas import PatientCreate, PatientResponse, PatientUpdate, VoiceRegisterRequest, VoiceRegisterConfirmRequest, TimelineResponse
 from backend.app.services.voice import voice_service
 from backend.app.services.llm_client import llm_client
@@ -200,3 +200,121 @@ async def get_patient_timeline(
     result = await db.execute(stmt)
     events = result.scalars().all()
     return events
+
+from pydantic import BaseModel
+
+class ResolveDiscrepancyRequest(BaseModel):
+    action: str # approve, reject
+
+@router.get("/{id}/discrepancies")
+async def list_patient_discrepancies(
+    id: str,
+    db: AsyncSession = Depends(get_db_session),
+    current_user: Doctor = Depends(require_any_role)
+):
+    stmt = select(ProfileDiscrepancy).filter(ProfileDiscrepancy.patient_id == id).order_by(ProfileDiscrepancy.created_at.desc())
+    result = await db.execute(stmt)
+    discrepancies = result.scalars().all()
+    
+    # Format current/extracted value for frontend response
+    resp = []
+    for d in discrepancies:
+        resp.append({
+            "id": d.id,
+            "patient_id": d.patient_id,
+            "field_name": d.field_name,
+            "current_value": d.current_value,
+            "extracted_value": d.extracted_value,
+            "source_document_id": d.source_document_id,
+            "confidence": d.confidence,
+            "status": d.status,
+            "created_at": d.created_at,
+            "reviewed_by": d.reviewed_by,
+            "reviewed_at": d.reviewed_at
+        })
+    return resp
+
+@router.patch("/{id}/discrepancies/{discrepancy_id}/resolve")
+async def resolve_patient_discrepancy(
+    id: str,
+    discrepancy_id: str,
+    body: ResolveDiscrepancyRequest,
+    db: AsyncSession = Depends(get_db_session),
+    current_user: Doctor = Depends(require_reception)
+):
+    # Verify patient
+    p_result = await db.execute(select(Patient).filter(Patient.id == id))
+    patient = p_result.scalars().first()
+    if not patient:
+        raise HTTPException(status_code=404, detail="Patient not found.")
+        
+    # Verify discrepancy
+    d_result = await db.execute(select(ProfileDiscrepancy).filter(ProfileDiscrepancy.id == discrepancy_id, ProfileDiscrepancy.patient_id == id))
+    discrepancy = d_result.scalars().first()
+    if not discrepancy:
+        raise HTTPException(status_code=404, detail="Discrepancy not found for this patient.")
+        
+    if discrepancy.status != "pending_review":
+        raise HTTPException(status_code=400, detail=f"Discrepancy already resolved with status {discrepancy.status}.")
+        
+    action = body.action.strip().lower()
+    if action not in ("approve", "reject"):
+        raise HTTPException(status_code=400, detail="Action must be 'approve' or 'reject'.")
+        
+    old_val = discrepancy.current_value or "None"
+    new_val = discrepancy.extracted_value
+    
+    if action == "approve":
+        # Write extracted_value into Patient
+        field = discrepancy.field_name
+        if field == "date_of_birth":
+            try:
+                dob_date = datetime.strptime(new_val, "%Y-%m-%d").date()
+                patient.date_of_birth = dob_date
+            except Exception:
+                raise HTTPException(status_code=400, detail=f"Invalid date format for birth date: '{new_val}'.")
+        elif field == "allergies":
+            patient.allergies = [a.strip() for a in new_val.split(",") if a.strip()]
+        else:
+            setattr(patient, field, new_val)
+            
+        discrepancy.status = "approved"
+        
+        # Timeline event for audit
+        timeline_evt = Timeline(
+            patient_id=patient.id,
+            event_type="note",
+            event_summary=f"Profile field '{field}' updated from '{old_val}' to '{new_val}' based on uploaded report (confirmed by {current_user.full_name}).",
+            reference_id=discrepancy.source_document_id,
+            event_date=datetime.now()
+        )
+        db.add(timeline_evt)
+        await log_audit_action(db, current_user.email, "UPDATE", "Patient", patient.id)
+        
+    elif action == "reject":
+        discrepancy.status = "rejected"
+        
+        # Keep timeline note for audit trail
+        timeline_evt = Timeline(
+            patient_id=patient.id,
+            event_type="note",
+            event_summary=f"Discrepancy for field '{discrepancy.field_name}' (extracted: '{new_val}') rejected by {current_user.full_name}. Profile remains '{old_val}'.",
+            reference_id=discrepancy.source_document_id,
+            event_date=datetime.now()
+        )
+        db.add(timeline_evt)
+        
+    discrepancy.reviewed_by = current_user.id
+    discrepancy.reviewed_at = datetime.now()
+    
+    await db.commit()
+    
+    return {
+        "id": discrepancy.id,
+        "status": discrepancy.status,
+        "field_name": discrepancy.field_name,
+        "current_value": discrepancy.current_value,
+        "extracted_value": discrepancy.extracted_value,
+        "reviewed_by": discrepancy.reviewed_by,
+        "reviewed_at": discrepancy.reviewed_at
+    }

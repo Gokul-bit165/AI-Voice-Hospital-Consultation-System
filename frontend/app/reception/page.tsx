@@ -1,10 +1,10 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, Patient } from "@/lib/api";
 import DashboardLayout from "@/components/DashboardLayout";
-import { Search, UserPlus, Phone, Calendar, Heart, ShieldAlert, FileText, Plus, ChevronRight, ClipboardList, X } from "lucide-react";
+import { Search, UserPlus, Phone, Calendar, Heart, ShieldAlert, FileText, Plus, ChevronRight, ClipboardList, X, Upload, Loader2 } from "lucide-react";
 
 export default function ReceptionDashboard() {
   const queryClient = useQueryClient();
@@ -12,6 +12,27 @@ export default function ReceptionDashboard() {
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [searchType, setSearchType] = useState("name"); // name, phone, id
   const [selectedPatientId, setSelectedPatientId] = useState<string | null>(null);
+  
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isUploadingDocs, setIsUploadingDocs] = useState(false);
+
+  const handleDocUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files ? Array.from(e.target.files) : [];
+    if (files.length === 0) return;
+    
+    setIsUploadingDocs(true);
+    try {
+      const res = await api.uploadRegistrationDocuments(files);
+      if (res && res.draft_id) {
+        window.location.href = `/reception/draft/${res.draft_id}`;
+      }
+    } catch (err: any) {
+      alert(err.message || "Failed to parse files for registration. Please try again.");
+    } finally {
+      setIsUploadingDocs(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
 
   // Manual Register form state
   const [showManualModal, setShowManualModal] = useState(false);
@@ -128,16 +149,36 @@ export default function ReceptionDashboard() {
             </div>
             
             <div className="flex items-center gap-1.5">
+              <input
+                type="file"
+                ref={fileInputRef}
+                onChange={handleDocUpload}
+                multiple
+                className="hidden"
+                accept=".pdf,.png,.jpg,.jpeg,.tiff,.bmp"
+              />
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isUploadingDocs}
+                className="inline-flex items-center gap-1.5 px-2.5 py-2 bg-indigo-50 border border-indigo-150 hover:bg-indigo-100 text-indigo-700 rounded-xl text-xs font-bold shadow-sm cursor-pointer active:scale-95 disabled:opacity-50 transition-all shrink-0"
+              >
+                {isUploadingDocs ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Upload className="h-3.5 w-3.5 text-indigo-600" />
+                )}
+                <span>Scan Doc</span>
+              </button>
               <button
                 onClick={() => setShowManualModal(true)}
-                className="inline-flex items-center gap-1.5 px-2.5 py-2 bg-white hover:bg-slate-50 border border-[#E5E7EB] rounded-xl text-xs font-bold text-slate-700 cursor-pointer active:scale-95 transition-all shadow-sm"
+                className="inline-flex items-center gap-1.5 px-2.5 py-2 bg-white hover:bg-slate-50 border border-[#E5E7EB] rounded-xl text-xs font-bold text-slate-700 cursor-pointer active:scale-95 transition-all shadow-sm shrink-0"
               >
                 <Plus className="h-3.5 w-3.5 text-[#2563EB]" />
                 <span>Manual</span>
               </button>
               <button
                 onClick={() => window.location.href = "/reception/register-voice"}
-                className="inline-flex items-center gap-1.5 px-2.5 py-2 bg-[#2563EB] hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-sm cursor-pointer active:scale-95 transition-all"
+                className="inline-flex items-center gap-1.5 px-2.5 py-2 bg-[#2563EB] hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-sm cursor-pointer active:scale-95 transition-all shrink-0"
               >
                 <UserPlus className="h-3.5 w-3.5" />
                 <span>Voice Register</span>

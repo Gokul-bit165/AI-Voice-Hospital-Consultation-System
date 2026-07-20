@@ -294,3 +294,94 @@ class ApiKey(Base):
     def key_value(self, value):
         self._key_value = encrypt_text(value)
 
+
+class PatientRegistrationDraft(Base):
+    __tablename__ = "patient_registration_drafts"
+    
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    
+    # Encrypted fields
+    _uploaded_files = Column("uploaded_files", Text, nullable=False) # JSON: [{"filename": "...", "temp_path": "...", "raw_text": "..."}]
+    _extracted_fields = Column("extracted_fields", Text, nullable=False) # JSON: extracted demographics
+    _extraction_confidence = Column("extraction_confidence", Text, nullable=True) # JSON
+    
+    status = Column(String(50), nullable=False, default="pending_review") # pending_review, confirmed, rejected
+    created_at = Column(DateTime, default=func.now())
+    reviewed_by = Column(String(36), ForeignKey("doctors.id", ondelete="SET NULL"), nullable=True)
+    reviewed_at = Column(DateTime, nullable=True)
+    
+    reviewer = relationship("Doctor")
+    
+    @property
+    def uploaded_files(self):
+        return decrypt_json(self._uploaded_files) or []
+        
+    @uploaded_files.setter
+    def uploaded_files(self, value):
+        self._uploaded_files = encrypt_json(value)
+        
+    @property
+    def extracted_fields(self):
+        return decrypt_json(self._extracted_fields) or {}
+        
+    @extracted_fields.setter
+    def extracted_fields(self, value):
+        self._extracted_fields = encrypt_json(value)
+        
+    @property
+    def extraction_confidence(self):
+        return decrypt_json(self._extraction_confidence) or {}
+        
+    @extraction_confidence.setter
+    def extraction_confidence(self, value):
+        self._extraction_confidence = encrypt_json(value)
+
+
+class ProfileDiscrepancy(Base):
+    __tablename__ = "profile_discrepancies"
+    
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    patient_id = Column(String(36), ForeignKey("patients.id", ondelete="CASCADE"), nullable=False, index=True)
+    field_name = Column(String(100), nullable=False)
+    
+    # Encrypted fields
+    _current_value = Column("current_value", Text, nullable=True)
+    _extracted_value = Column("extracted_value", Text, nullable=True)
+    
+    source_document_id = Column(String(36), ForeignKey("medical_records.id", ondelete="SET NULL"), nullable=True)
+    confidence = Column(Float, nullable=True)
+    status = Column(String(50), nullable=False, default="pending_review") # pending_review, approved, rejected
+    created_at = Column(DateTime, default=func.now())
+    reviewed_by = Column(String(36), ForeignKey("doctors.id", ondelete="SET NULL"), nullable=True)
+    reviewed_at = Column(DateTime, nullable=True)
+    
+    patient = relationship("Patient")
+    reviewer = relationship("Doctor")
+    
+    __table_args__ = (
+        Index(
+            "idx_unique_pending_discrepancy",
+            "patient_id",
+            "field_name",
+            unique=True,
+            postgresql_where="status = 'pending_review'"
+        ),
+    )
+    
+    @property
+    def current_value(self):
+        return decrypt_text(self._current_value) if self._current_value else None
+        
+    @current_value.setter
+    def current_value(self, value):
+        self._current_value = encrypt_text(value) if value else None
+        
+    @property
+    def extracted_value(self):
+        return decrypt_text(self._extracted_value) if self._extracted_value else None
+        
+    @extracted_value.setter
+    def extracted_value(self, value):
+        self._extracted_value = encrypt_text(value) if value else None
+
+

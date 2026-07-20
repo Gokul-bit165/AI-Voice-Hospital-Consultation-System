@@ -12,8 +12,18 @@ Extract the following information:
 3. lab_values: A list of lab tests, values, and units if present. Each entry must have "name", "value", and "unit" (e.g., {"name": "TSH", "value": "2.4", "unit": "mIU/L"}).
 4. dates: List of any clinical dates mentioned (e.g., date of test, date of prescription). Convert to YYYY-MM-DD where possible.
 5. doctor_names: List of doctor/clinician names mentioned in the note.
+6. blood_group: The patient's blood group if mentioned in the document (e.g., "A+", "B+", "O-", etc.). Set to null if not mentioned.
+7. full_name: The patient's full name if mentioned in the document. Set to null if not mentioned.
+8. date_of_birth: The patient's date of birth if mentioned (format as YYYY-MM-DD if possible). Set to null if not mentioned.
+9. gender: The patient's gender if mentioned (e.g., Male, Female, Other). Set to null if not mentioned.
+10. phone: The patient's phone number if mentioned. Set to null if not mentioned.
+11. address: The patient's address if mentioned. Set to null if not mentioned.
+12. allergies: A list of known patient allergies mentioned in the document. Leave as empty list [] if not mentioned.
+13. emergency_contact: The emergency contact details (name/phone) if mentioned. Set to null if not mentioned.
+14. extraction_confidence: A JSON object/dictionary mapping each extracted demographic field name above (full_name, date_of_birth, gender, phone, address, blood_group, allergies, emergency_contact) to your confidence score (a float between 0.0 and 1.0) representing how certain you are of the extracted value based on the text.
 
 CRITICAL INSTRUCTIONS:
-- Extract ONLY what is present in the text. Do NOT hallucinate diagnoses, labs, or medicines.
-- If a value or field is not present in the OCR raw text, omit it or leave the list empty.
-- Do not make assumptions about medications or lab values.
+- Extract ONLY what is present in the text. Do NOT hallucinate diagnoses, labs, medicines, or demographics.
+- If a value or field is not present in the OCR raw text, omit it, set it to null, or leave the list empty as instructed.
+- Do not make assumptions or infer/guess values (like guessing a phone number or birth date) if they are not explicitly written.
+- Ensure case accuracy for symbols like blood groups (e.g., "B+", "A-", "O+").

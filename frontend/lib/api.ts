@@ -520,4 +520,38 @@ export const api = {
       }
     }
   },
+
+  // Discrepancies
+  async getPatientDiscrepancies(patientId: string): Promise<any[]> {
+    return fetchWithAuth(`${API_BASE_URL}/patients/${patientId}/discrepancies`);
+  },
+  async resolveDiscrepancy(patientId: string, discrepancyId: string, action: "approve" | "reject"): Promise<any> {
+    return fetchWithAuth(`${API_BASE_URL}/patients/${patientId}/discrepancies/${discrepancyId}/resolve`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action }),
+    });
+  },
+
+  // Document-First Registration
+  async uploadRegistrationDocuments(files: File[]): Promise<any> {
+    const formData = new FormData();
+    files.forEach((file) => {
+      formData.append("files", file);
+    });
+    return fetchWithAuth(`${API_BASE_URL}/register/upload-documents`, {
+      method: "POST",
+      body: formData,
+    });
+  },
+  async getRegistrationDraft(draftId: string): Promise<any> {
+    return fetchWithAuth(`${API_BASE_URL}/register/drafts/${draftId}`);
+  },
+  async confirmRegistrationDraft(draftId: string, data: any, force = false): Promise<any> {
+    return fetchWithAuth(`${API_BASE_URL}/register/drafts/${draftId}/confirm?force=${force}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    });
+  },
 };

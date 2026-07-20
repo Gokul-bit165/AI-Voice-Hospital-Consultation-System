@@ -5,7 +5,7 @@ from backend.app.core.config import settings
 from backend.app.core.api_keys import load_api_keys
 
 # Import routers
-from backend.app.api.v1.endpoints import auth, patients, records, visits, prescriptions, voice_command, rag, admin
+from backend.app.api.v1.endpoints import auth, patients, records, visits, prescriptions, voice_command, rag, admin, register
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -39,6 +39,7 @@ app.include_router(prescriptions.router, prefix=f"{settings.API_V1_STR}", tags=[
 app.include_router(voice_command.router, prefix=f"{settings.API_V1_STR}/voice", tags=["voice"])
 app.include_router(rag.router, prefix=f"{settings.API_V1_STR}", tags=["rag"])
 app.include_router(admin.router, prefix=f"{settings.API_V1_STR}/admin", tags=["admin"])
+app.include_router(register.router, prefix=f"{settings.API_V1_STR}", tags=["register"])
 
 @app.get("/")
 def read_root():

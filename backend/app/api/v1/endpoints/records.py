@@ -3,7 +3,7 @@ import uuid
 import shutil
 from typing import List
 from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, BackgroundTasks
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
@@ -11,7 +11,7 @@ from sqlalchemy.orm import selectinload
 
 from backend.app.core.deps import get_db_session, require_reception, require_any_role
 from backend.app.core.config import settings
-from backend.app.models.models import MedicalRecord, Patient, OCRRecord, Embedding, Timeline, Doctor
+from backend.app.models.models import MedicalRecord, Patient, OCRRecord, Embedding, Timeline, Doctor, ProfileDiscrepancy
 from backend.app.schemas.schemas import MedicalRecordResponse, OCRRecordResponse, OCRStructuredData
 from backend.app.services.ocr import ocr_service
 from backend.app.services.llm_client import llm_client
@@ -175,9 +175,68 @@ async def delete_medical_record(
     await db.commit()
     return {"detail": "Medical record deleted successfully"}
 
+async def cleanup_stale_records_task():
+    """
+    Cleans up PatientRegistrationDraft and ProfileDiscrepancy records older than 30 days.
+    Deletes physical temp files of draft registrations.
+    """
+    from backend.app.core.database import SessionLocal
+    from backend.app.models.models import PatientRegistrationDraft, ProfileDiscrepancy
+    from datetime import datetime, timedelta
+    cutoff = datetime.now() - timedelta(days=30)
+    
+    async with SessionLocal() as session:
+        try:
+            # 1. Stale drafts
+            drafts_result = await session.execute(
+                select(PatientRegistrationDraft)
+                .filter(
+                    PatientRegistrationDraft.status == "pending_review",
+                    PatientRegistrationDraft.created_at < cutoff
+                )
+            )
+            stale_drafts = drafts_result.scalars().all()
+            for draft in stale_drafts:
+                # Delete temp files
+                files = draft.uploaded_files
+                for f in files:
+                    tpath = f.get("temp_path")
+                    if tpath and os.path.exists(tpath):
+                        try:
+                            os.remove(tpath)
+                        except Exception as e:
+                            print(f"Failed to remove temp file during cleanup: {e}")
+                if files:
+                    tpath = files[0].get("temp_path")
+                    if tpath:
+                        tdir = os.path.dirname(tpath)
+                        if os.path.exists(tdir) and not os.listdir(tdir):
+                            try:
+                                os.rmdir(tdir)
+                            except Exception:
+                                pass
+                draft.status = "rejected"
+                
+            # 2. Stale discrepancies
+            discrepancies_result = await session.execute(
+                select(ProfileDiscrepancy)
+                .filter(
+                    ProfileDiscrepancy.status == "pending_review",
+                    ProfileDiscrepancy.created_at < cutoff
+                )
+            )
+            stale_discrepancies = discrepancies_result.scalars().all()
+            for disc in stale_discrepancies:
+                disc.status = "rejected"
+                
+            await session.commit()
+        except Exception as e:
+            print(f"Error in cleanup task: {e}")
+
 @router.post("/records/{id}/ocr", response_model=OCRRecordResponse)
 async def process_record_ocr(
     id: str,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db_session),
     current_user: Doctor = Depends(require_reception)
 ):
@@ -222,6 +281,126 @@ async def process_record_ocr(
     db_ocr.structured_data = structured.model_dump() # enters via encryption
     db.add(db_ocr)
     await db.flush()
+
+    # Demographic reconciliation for existing patients
+    from sqlalchemy.exc import IntegrityError
+    
+    p_result = await db.execute(select(Patient).filter(Patient.id == record.patient_id))
+    patient = p_result.scalars().first()
+    if patient:
+        fields_to_check = []
+        
+        # 1. blood_group
+        if structured.blood_group:
+            bg = structured.blood_group.strip().upper()
+            if bg in {"A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"}:
+                fields_to_check.append(("blood_group", patient.blood_group, bg))
+                
+        # 2. full_name
+        if structured.full_name:
+            fn = structured.full_name.strip()
+            if fn:
+                fields_to_check.append(("full_name", patient.full_name, fn))
+                
+        # 3. date_of_birth
+        if structured.date_of_birth:
+            dob_str = structured.date_of_birth.strip()
+            try:
+                datetime.strptime(dob_str, "%Y-%m-%d")
+                curr_dob_str = patient.date_of_birth.strftime("%Y-%m-%d") if patient.date_of_birth else None
+                fields_to_check.append(("date_of_birth", curr_dob_str, dob_str))
+            except ValueError:
+                pass
+                
+        # 4. gender
+        if structured.gender:
+            g = structured.gender.strip()
+            if g:
+                fields_to_check.append(("gender", patient.gender, g))
+                
+        # 5. phone
+        if structured.phone:
+            import re
+            cleaned_phone = re.sub(r"\D", "", structured.phone.strip())
+            if 7 <= len(cleaned_phone) <= 15:
+                fields_to_check.append(("phone", patient.phone, cleaned_phone))
+                
+        # 6. address
+        if structured.address:
+            addr = structured.address.strip()
+            if addr:
+                fields_to_check.append(("address", patient.address, addr))
+                
+        # 7. emergency_contact (map to emergency_contact_name)
+        if structured.emergency_contact:
+            ec = structured.emergency_contact.strip()
+            if ec:
+                fields_to_check.append(("emergency_contact_name", patient.emergency_contact_name, ec))
+                
+        # 8. allergies
+        if structured.allergies:
+            ext_allergies = sorted([a.strip() for a in structured.allergies if a.strip()])
+            curr_allergies = sorted(patient.allergies or [])
+            if ext_allergies != curr_allergies:
+                fields_to_check.append(("allergies", ", ".join(curr_allergies), ", ".join(ext_allergies)))
+                
+        for field_name, current_val, extracted_val in fields_to_check:
+            c_norm = (current_val or "").strip().lower()
+            e_norm = (extracted_val or "").strip().lower()
+            if c_norm != e_norm:
+                # Discrepancy found!
+                conf = None
+                if structured.extraction_confidence and isinstance(structured.extraction_confidence, dict):
+                    conf_val = structured.extraction_confidence.get(field_name)
+                    if conf_val is None and field_name == "emergency_contact_name":
+                        conf_val = structured.extraction_confidence.get("emergency_contact")
+                    if conf_val is not None:
+                        try:
+                            conf = float(conf_val)
+                        except (ValueError, TypeError):
+                            pass
+                
+                # Check for existing pending discrepancy
+                exist_stmt = select(ProfileDiscrepancy).filter(
+                    ProfileDiscrepancy.patient_id == patient.id,
+                    ProfileDiscrepancy.field_name == field_name,
+                    ProfileDiscrepancy.status == "pending_review"
+                )
+                
+                # Try application-level deduplication
+                existing_disc = (await db.execute(exist_stmt)).scalars().first()
+                if existing_disc:
+                    existing_disc.extracted_value = extracted_val
+                    existing_disc.source_document_id = record.id
+                    existing_disc.confidence = conf
+                    existing_disc.created_at = datetime.now()
+                else:
+                    # Catch constraint violation at database level via savepoint nested transaction
+                    try:
+                        async with db.begin_nested():
+                            new_disc = ProfileDiscrepancy(
+                                patient_id=patient.id,
+                                field_name=field_name,
+                                source_document_id=record.id,
+                                confidence=conf,
+                                status="pending_review",
+                                created_at=datetime.now()
+                            )
+                            new_disc.current_value = current_val
+                            new_disc.extracted_value = extracted_val
+                            db.add(new_disc)
+                            await db.flush()
+                    except IntegrityError:
+                        # Conflict occurred, fall back to update the existing record
+                        existing_disc = (await db.execute(exist_stmt)).scalars().first()
+                        if existing_disc:
+                            existing_disc.extracted_value = extracted_val
+                            existing_disc.source_document_id = record.id
+                            existing_disc.confidence = conf
+                            existing_disc.created_at = datetime.now()
+
+    # Trigger background cleanup job
+    background_tasks.add_task(cleanup_stale_records_task)
 
     # Dynamic chunking of OCR Text for ChromaDB RAG
     # We chunk by paragraph/newlines or fixed blocks.

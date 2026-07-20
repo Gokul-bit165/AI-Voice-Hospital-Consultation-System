@@ -73,9 +73,9 @@ TOOL_DECLARATIONS = [
     {
         "name": "get_patient_profile",
         "description": (
-            "Retrieve the patient's core demographic and clinical profile: full name, "
+            "Retrieve the patient's core demographic and clinical profile: patient ID, full name, "
             "DOB, gender, blood group, declared allergies list. Use this first when "
-            "any allergy or demographic information is needed."
+            "any allergy, demographic, or profile information (like patient ID) is needed."
         ),
         "parameters": {
             "type": "object",
@@ -224,6 +224,10 @@ class ClinicalAgent:
                 "You are an expert AI clinical assistant embedded in a hospital consultation system. "
                 "Use the available tools to answer the doctor's question. "
                 "Always prefer patient-specific tools over general knowledge when the question is about this patient. "
+                "For the patient's official registered demographics and profile (e.g. system patient ID, registered name, DOB, blood group, allergies, contact info), "
+                "you MUST call the 'get_patient_profile' tool as the primary source of truth. "
+                "However, if the question asks about details from the uploaded documents, external hospital IDs, diagnoses, or lab results written in the notes, "
+                "you MUST call the 'search_patient_history' tool to retrieve them from the scanned files. "
                 "Be concise, clinically accurate, and use markdown formatting in your final answer. "
                 "Never fabricate patient data — if tools return no data, say so explicitly."
             ),
@@ -364,6 +368,10 @@ class ClinicalAgent:
             "You are an expert AI clinical assistant embedded in a hospital consultation system. "
             "Use the available tools to answer the doctor's question. "
             "Always prefer patient-specific tools over general knowledge when the question is about this patient. "
+            "For the patient's official registered demographics and profile (e.g. system patient ID, registered name, DOB, blood group, allergies, contact info), "
+            "you MUST call the 'get_patient_profile' tool as the primary source of truth. "
+            "However, if the question asks about details from the uploaded documents, external hospital IDs, diagnoses, or lab results written in the notes, "
+            "you MUST call the 'search_patient_history' tool to retrieve them from the scanned files. "
             "Be concise, clinically accurate, and use markdown formatting in your final answer. "
             "Never fabricate patient data — if tools return no data, say so explicitly."
         )

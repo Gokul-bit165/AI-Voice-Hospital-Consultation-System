@@ -4,6 +4,7 @@ import React, { use } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import DashboardLayout from "@/components/DashboardLayout";
+import ProfileDiscrepancies from "@/components/ProfileDiscrepancies";
 import { ArrowLeft, Calendar, Phone, Heart, ShieldAlert, FileText, ChevronRight, Play, Upload, Clock, UserPlus, Loader2, Eye } from "lucide-react";
 
 export default function PatientProfilePage({ params: paramsPromise }: { params: Promise<{ id: string }> }) {
@@ -156,6 +157,9 @@ export default function PatientProfilePage({ params: paramsPromise }: { params: 
 
             {/* Right column: Timeline and Records (cols 8) */}
             <div className="lg:col-span-8 space-y-6">
+              
+              {/* Profile Discrepancies Reconciliation */}
+              <ProfileDiscrepancies patientId={patientId} />
               
               {/* Medical Records List */}
               <div className="bg-white border border-[#E5E7EB] rounded-2xl p-5 shadow-sm">
