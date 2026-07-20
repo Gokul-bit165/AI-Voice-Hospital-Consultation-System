@@ -9,7 +9,7 @@ OCR Raw Text:
 Extract the following information:
 1. diagnoses: A list of active medical diagnoses, diseases, or complaints identified in the document (e.g., "Hypertension", "Type 2 Diabetes Mellitus").
 2. medications: A list of active medications prescribed, showing drug name and optionally dosage (e.g., "Metformin 500mg").
-3. lab_values: A list of lab tests, values, and units if present. Each entry must have "name", "value", and "unit" (e.g., {"name": "TSH", "value": "2.4", "unit": "mIU/L"}).
+3. lab_values: A list of lab tests, values, and units, AND any vital signs (like Blood Pressure, Heart Rate/Pulse, Body Temperature, Oxygen SpO2, Weight) if present in the document. Each entry must have "name", "value", and "unit" (e.g., {"name": "Blood Pressure", "value": "120/80", "unit": "mmHg"}, {"name": "Heart Rate", "value": "72", "unit": "bpm"}, {"name": "Fasting Plasma Glucose", "value": "142", "unit": "mg/dL"}).
 4. dates: List of any clinical dates mentioned (e.g., date of test, date of prescription). Convert to YYYY-MM-DD where possible.
 5. doctor_names: List of doctor/clinician names mentioned in the note.
 6. blood_group: The patient's blood group if mentioned in the document (e.g., "A+", "B+", "O-", etc.). Set to null if not mentioned.

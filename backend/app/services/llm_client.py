@@ -88,7 +88,7 @@ class LLMClient:
                     if response_format_json:
                         kwargs["response_format"] = {"type": "json_object"}
                     if is_or:
-                        kwargs["max_tokens"] = 500
+                        kwargs["max_tokens"] = 2000
 
                     response = client.chat.completions.create(
                         model=model_name,

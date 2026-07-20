@@ -5,7 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import DashboardLayout from "@/components/DashboardLayout";
 import ProfileDiscrepancies from "@/components/ProfileDiscrepancies";
-import { ArrowLeft, Calendar, Phone, Heart, ShieldAlert, FileText, ChevronRight, Play, Upload, Clock, UserPlus, Loader2, Eye } from "lucide-react";
+import { ArrowLeft, Calendar, Phone, Heart, ShieldAlert, FileText, ChevronRight, Play, Upload, Clock, UserPlus, Loader2, Eye, Trash2 } from "lucide-react";
 
 export default function PatientProfilePage({ params: paramsPromise }: { params: Promise<{ id: string }> }) {
   const params = use(paramsPromise);
@@ -28,6 +28,21 @@ export default function PatientProfilePage({ params: paramsPromise }: { params: 
     queryKey: ["patient-timeline", patientId],
     queryFn: () => api.getPatientTimeline(patientId),
   });
+
+  const handleDeletePatient = async () => {
+    if (confirm("Are you sure you want to permanently delete this patient record and all their clinical files? This action cannot be undone.")) {
+      try {
+        await api.deletePatient(patientId);
+        alert("Patient record deleted successfully.");
+        if (typeof window !== "undefined") {
+          const role = localStorage.getItem("role");
+          window.location.href = role === "Doctor" ? "/doctor" : "/reception";
+        }
+      } catch (err: any) {
+        alert("Failed to delete patient: " + err.message);
+      }
+    }
+  };
 
   const handleViewDocument = async (recordId: string, filename: string) => {
     try {
@@ -89,6 +104,14 @@ export default function PatientProfilePage({ params: paramsPromise }: { params: 
               >
                 <Upload className="h-4 w-4 text-[#2563EB]" />
                 <span>Upload Records</span>
+              </button>
+
+              <button
+                onClick={handleDeletePatient}
+                className="inline-flex items-center gap-1.5 px-4 py-2 bg-white border border-red-200 text-red-600 hover:bg-red-50 hover:border-red-300 rounded-xl text-xs font-bold cursor-pointer active:scale-95 transition-all"
+              >
+                <Trash2 className="h-4 w-4 text-red-600" />
+                <span>Delete Patient</span>
               </button>
             </div>
           </div>

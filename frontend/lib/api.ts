@@ -532,6 +532,15 @@ export const api = {
       body: JSON.stringify({ action }),
     });
   },
+  async getPatientTrends(patientId: string): Promise<any> {
+    return fetchWithAuth(`${API_BASE_URL}/patients/${patientId}/trends`);
+  },
+  async getPatientVitalsHistory(patientId: string, metric = "heart_rate", range = "30d"): Promise<any[]> {
+    return fetchWithAuth(`${API_BASE_URL}/patients/${patientId}/vitals?metric=${metric}&range=${range}`);
+  },
+  async getPatientLabHistory(patientId: string, testName: string): Promise<any[]> {
+    return fetchWithAuth(`${API_BASE_URL}/patients/${patientId}/labs/${encodeURIComponent(testName)}/history`);
+  },
 
   // Document-First Registration
   async uploadRegistrationDocuments(files: File[]): Promise<any> {

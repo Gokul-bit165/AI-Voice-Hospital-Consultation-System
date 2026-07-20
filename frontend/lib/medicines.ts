@@ -1,8 +1,8 @@
 export const MEDICINES_LIST = [
-  "Paracetamol", "Amoxicillin", "Azithromycin", "Metformin", "Cetirizine",
+  "Paracetamol", "Amoxicillin", "Penicillin", "Azithromycin", "Metformin", "Cetirizine",
   "Ibuprofen", "Omeprazole", "Pantoprazole", "Diclofenac", "Amlodipine",
   "Losartan", "Atorvastatin", "Rosuvastatin", "Levothyroxine", "Glimepiride",
-  "Ciprofloxacin", "Levofloxacin", "Doxycycline", "Metronidazole", "Ondansetron",
+  "Ciprofloxacin", "Levofloxacin", "Doxycycline", "Cephalexin", "Metronidazole", "Ondansetron",
   "Domperidone", "Rabeprazole", "Montelukast", "Levocetirizine", "Aspirin",
   "Clopidogrel", "Telmisartan", "Olmesartan", "Teneligliptin", "Vildagliptin",
   "Sitagliptin", "Gliclazide", "Pioglitazone", "Gabapentin", "Pregabalin",

@@ -5,6 +5,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter, useSearchParams } from "next/navigation";
 import DashboardLayout from "@/components/DashboardLayout";
 import LiveCaption from "@/components/LiveCaption";
+import { TimeSeriesChart } from "@/components/TimeSeriesChart";
 import { api, Visit, Vitals, Medicine } from "@/lib/api";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -150,6 +151,63 @@ const Sparkline = ({ points, color }: { points: number[]; color: string }) => {
   );
 };
 
+const getLevenshteinDistance = (a: string, b: string): number => {
+  const tmp: number[][] = [];
+  for (let i = 0; i <= a.length; i++) {
+    tmp[i] = [i];
+  }
+  for (let j = 0; j <= b.length; j++) {
+    tmp[0][j] = j;
+  }
+  for (let i = 1; i <= a.length; i++) {
+    for (let j = 1; j <= b.length; j++) {
+      tmp[i][j] = Math.min(
+        tmp[i - 1][j] + 1,
+        tmp[i][j - 1] + 1,
+        tmp[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)
+      );
+    }
+  }
+  return tmp[a.length][b.length];
+};
+
+const getMedicineSuggestion = (input: string): string | null => {
+  if (!input || input.trim() === "") return null;
+  const name = input.trim().toLowerCase();
+  
+  const hasExact = MEDICINES_LIST.some((m) => m.toLowerCase() === name);
+  if (hasExact) return null;
+  
+  let bestMatch: string | null = null;
+  let minDistance = 999;
+  
+  for (const med of MEDICINES_LIST) {
+    const medLower = med.toLowerCase();
+    
+    if (medLower.includes(name) && name.length >= 3) {
+      return med;
+    }
+    if (name.includes(medLower) && medLower.length >= 3) {
+      return med;
+    }
+    
+    const dist = getLevenshteinDistance(name, medLower);
+    
+    const targetLen = medLower.length;
+    let maxDist = 3;
+    if (targetLen <= 5) maxDist = 1;
+    else if (targetLen <= 8) maxDist = 2;
+    else maxDist = 4;
+
+    if (dist < minDistance && dist <= maxDist) {
+      minDistance = dist;
+      bestMatch = med;
+    }
+  }
+  
+  return bestMatch;
+};
+
 const TABS: { id: Tab; label: string; icon: any }[] = [
   { id: "vitals", label: "Vitals & Voice", icon: Activity },
   { id: "rx", label: "Prescription", icon: Pill },
@@ -166,6 +224,18 @@ export default function ConsultationPage({
 
   const [activeVisit, setActiveVisit] = useState<Visit | null>(null);
   const [currentUser, setCurrentUser] = useState<{ full_name: string; specialization: string } | null>(null);
+  const [expandedLab, setExpandedLab] = useState<string | null>(null);
+  
+  const [activeEditName, setActiveEditName] = useState("");
+  const [debouncedEditName, setDebouncedEditName] = useState("");
+  const [activeEditIndex, setActiveEditIndex] = useState<number | null>(null);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedEditName(activeEditName);
+    }, 200);
+    return () => clearTimeout(timer);
+  }, [activeEditName]);
   
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -313,6 +383,59 @@ export default function ConsultationPage({
     queryKey: ["patient-timeline", patientId],
     queryFn: () => api.getPatientTimeline(patientId),
   });
+
+  const { data: trends } = useQuery({
+    queryKey: ["patient-trends", patientId],
+    queryFn: () => api.getPatientTrends(patientId),
+  });
+
+  const [selectedMetric, setSelectedMetric] = useState("heart_rate");
+  const [selectedRange, setSelectedRange] = useState("30d");
+
+  const { data: vitalsHistory = [], isLoading: isVitalsLoading } = useQuery({
+    queryKey: ["patient-vitals-history", patientId, selectedMetric, selectedRange],
+    queryFn: () => api.getPatientVitalsHistory(patientId, selectedMetric, selectedRange),
+  });
+
+  const { data: labHistory = [], isLoading: isLabHistoryLoading } = useQuery({
+    queryKey: ["patient-lab-history", patientId, expandedLab],
+    queryFn: () => expandedLab ? api.getPatientLabHistory(patientId, expandedLab) : Promise.resolve([]),
+    enabled: !!expandedLab,
+  });
+
+  const getDeltaIndicator = (history: any[]) => {
+    if (history.length < 2) return null;
+    const latest = history[history.length - 1];
+    const prev = history[history.length - 2];
+    const latestVal = parseFloat(latest.value);
+    const prevVal = parseFloat(prev.value);
+    if (isNaN(latestVal) || isNaN(prevVal)) return null;
+    const diff = latestVal - prevVal;
+    const sign = diff >= 0 ? "+" : "";
+    const color = diff <= 0 ? "text-emerald-600 font-bold" : "text-red-600 font-bold";
+    let prevDateStr = "";
+    try {
+      prevDateStr = new Date(prev.timestamp).toLocaleDateString(undefined, { day: "numeric", month: "short" });
+    } catch {
+      prevDateStr = prev.date || "";
+    }
+    return (
+      <span className={`text-[11px] ml-2 ${color}`}>
+        ({sign}{diff.toFixed(1)} since {prevDateStr})
+      </span>
+    );
+  };
+
+  const getUnit = (metric: string) => {
+    switch (metric) {
+      case "heart_rate": return "bpm";
+      case "body_temperature": return "°F";
+      case "oxygen": return "%";
+      case "weight": return "kg";
+      case "bmi": return "";
+      default: return "";
+    }
+  };
 
   useEffect(() => {
     api.getMe()
@@ -695,11 +818,11 @@ export default function ConsultationPage({
     try {
       await api.updateVisit(activeVisit.id, { vitals });
       const finalMeds = medicines.filter((m) => m.name.trim() !== "");
-      await api.createPrescription(activeVisit.id, { medicines: finalMeds });
+      const rx = await api.createPrescription(activeVisit.id, { medicines: finalMeds });
       await api.completeVisit(activeVisit.id);
       queryClient.invalidateQueries({ queryKey: ["patients"] });
       alert("Consultation finalized successfully.");
-      window.location.href = "/doctor";
+      window.location.href = `/patient/${patientId}/prescription/preview?prescriptionId=${rx.id}`;
     } catch (err: any) {
       alert("Failed to finalize: " + err.message);
     } finally {
@@ -745,7 +868,7 @@ export default function ConsultationPage({
     <DashboardLayout vitals={vitals} setVitals={setVitals} timeline={timeline}>
       {/* ══════════════ BODY: MAIN (tabs) + RESIZE HANDLE + AI PANEL ══════════════ */}
       <div 
-        className="flex-1 flex flex-col lg:flex-row min-h-0 h-full w-full lg:overflow-hidden overflow-y-auto"
+        className="flex-1 flex flex-col lg:flex-row min-h-0 h-full w-full overflow-y-auto"
         style={{ "--chat-width": `${chatWidth}px` } as React.CSSProperties}
       >
 
@@ -840,7 +963,7 @@ export default function ConsultationPage({
           </div>
 
           {/* Tab content — scrollable */}
-          <main className="flex-1 overflow-y-auto px-3 sm:px-6 py-4 sm:py-5 pb-28 lg:pb-6 space-y-4">
+          <main className="flex-1 px-3 sm:px-6 py-4 sm:py-5 pb-28 lg:pb-6 space-y-4">
 
             {/* ── TAB: VITALS & VOICE ───────────────────────────────────────── */}
             {activeTab === "vitals" && (
@@ -988,9 +1111,39 @@ export default function ConsultationPage({
                                   list="medicine-suggestions"
                                   value={med.name ?? ""}
                                   placeholder="Amoxicillin"
-                                  onChange={(e) => handleMedChange(idx, "name", e.target.value)}
+                                  onFocus={() => {
+                                    setActiveEditIndex(idx);
+                                    setActiveEditName(med.name ?? "");
+                                  }}
+                                  onBlur={() => setTimeout(() => setActiveEditIndex(null), 250)}
+                                  onChange={(e) => {
+                                    handleMedChange(idx, "name", e.target.value);
+                                    setActiveEditName(e.target.value);
+                                  }}
                                   className="w-full bg-white border border-[#E5E7EB] rounded-xl px-3 py-2.5 text-sm font-semibold text-[#111827] focus:outline-none focus:border-[#2563EB] focus:ring-1 focus:ring-[#2563EB] transition-all"
                                 />
+                                {(() => {
+                                  const searchVal = activeEditIndex === idx ? debouncedEditName : (med.name ?? "");
+                                  const suggestion = getMedicineSuggestion(searchVal);
+                                  if (suggestion && suggestion.toLowerCase() !== (med.name ?? "").toLowerCase()) {
+                                    return (
+                                      <div className="mt-1.5 px-2 py-1 bg-amber-50 border border-amber-100 rounded-lg text-[10px] text-amber-700 font-semibold flex items-center gap-1.5">
+                                        <span>Did you mean:</span>
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            handleMedChange(idx, "name", suggestion);
+                                            setActiveEditName(suggestion);
+                                          }}
+                                          className="underline cursor-pointer hover:text-amber-900 font-bold px-1.5 py-0.5 bg-white border border-amber-200 rounded shadow-sm hover:bg-slate-50 transition-all"
+                                        >
+                                          {suggestion}
+                                        </button>
+                                      </div>
+                                    );
+                                  }
+                                  return null;
+                                })()}
                               </td>
                               <td className="px-2 py-2">
                                 <input
@@ -1096,70 +1249,268 @@ export default function ConsultationPage({
 
             {/* ── TAB: TRENDS & LABS ────────────────────────────────────────── */}
             {activeTab === "history" && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {/* Vitals Trend — drag the bottom-
-                 {/* Vitals Trend — drag the bottom- */}
-                <div className="p-4 rounded-2xl border border-[#E5E7EB] bg-white shadow-sm">
-                  <div className="flex items-center justify-between mb-4 border-b border-[#E5E7EB] pb-2">
+              <div className="space-y-6 w-full text-[#111827]">
+                
+                {/* 1. Full-Width Vitals Trend Section */}
+                <div className="p-5 rounded-2xl border border-[#E5E7EB] bg-white shadow-sm space-y-5">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#E5E7EB] pb-3">
                     <div className="flex items-center gap-2">
-                      <Activity className="h-4 w-4 text-[#2563EB]" />
-                      <h3 className="text-sm font-bold text-[#111827]">
-                        Vitals Historical Trend
-                      </h3>
+                      <Activity className="h-5 w-5 text-[#2563EB]" />
+                      <div>
+                        <h3 className="text-base font-bold text-[#111827]">Vitals Historical Trend</h3>
+                        <p className="text-xs text-[#6B7280]">Select a vital parameter and range to track patient health timeline.</p>
+                      </div>
+                    </div>
+                    
+                    {/* Range Selector */}
+                    <div className="flex bg-[#F1F5F9] p-0.5 rounded-xl text-xs font-semibold self-start sm:self-center">
+                      {[
+                        { label: "7d", id: "7d" },
+                        { label: "30d", id: "30d" },
+                        { label: "90d", id: "90d" },
+                        { label: "All", id: "all" }
+                      ].map((r) => (
+                        <button
+                          key={r.id}
+                          type="button"
+                          onClick={() => setSelectedRange(r.id)}
+                          className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
+                            selectedRange === r.id
+                              ? "bg-white shadow-sm text-[#111827] font-bold"
+                              : "text-[#6B7280] hover:text-[#111827]"
+                          }`}
+                        >
+                          {r.label}
+                        </button>
+                      ))}
                     </div>
                   </div>
-                  
-                  <div className="grid grid-cols-2 gap-3">
+
+                  {/* Vitals Tab Switcher */}
+                  <div className="flex flex-wrap gap-2 border-b border-[#F1F5F9] pb-3">
                     {[
-                      { label: "Heart Rate", value: vitals.hr ? `${vitals.hr} bpm` : "78 bpm", color: "#DC2626", points: [68, 72, 70, 78, 74, 78] },
-                      { label: "Blood Pressure", value: vitals.bp ? `${vitals.bp} mmHg` : "120/80 mmHg", color: "#2563EB", points: [118, 122, 120, 118, 121, 120] },
-                      { label: "Body Temp", value: vitals.temp ? `${vitals.temp} °F` : "98.6 °F", color: "#F59E0B", points: [98.4, 98.6, 98.5, 98.7, 98.6, 98.6] },
-                      { label: "Oxygen SpO₂", value: vitals.spo2 ? `${vitals.spo2} %` : "98 %", color: "#16A34A", points: [97, 98, 97, 99, 98, 98] },
-                    ].map((trend, idx) => (
-                      <div key={idx} className="p-3 bg-[#F8FAFC] rounded-xl border border-[#E5E7EB] flex items-center justify-between">
-                        <div>
-                          <span className="text-[10px] text-[#6B7280] font-bold uppercase tracking-wider block">
-                            {trend.label}
-                          </span>
-                          <span className="text-xs font-bold text-[#111827] block mt-0.5">{trend.value}</span>
-                        </div>
-                        <div className="opacity-80">
-                          <Sparkline points={trend.points} color={trend.color} />
-                        </div>
-                      </div>
+                      { label: "Heart Rate", id: "heart_rate" },
+                      { label: "Blood Pressure", id: "blood_pressure" },
+                      { label: "Body Temp", id: "body_temperature" },
+                      { label: "Oxygen SpO₂", id: "oxygen" },
+                      { label: "Weight", id: "weight" },
+                      { label: "BMI", id: "bmi" }
+                    ].map((m) => (
+                      <button
+                        key={m.id}
+                        type="button"
+                        onClick={() => setSelectedMetric(m.id)}
+                        className={`px-3 py-2 rounded-xl text-xs font-bold transition-all border cursor-pointer ${
+                          selectedMetric === m.id
+                            ? "bg-blue-50 border-[#2563EB] text-[#2563EB]"
+                            : "bg-white border-[#E5E7EB] text-[#6B7280] hover:text-[#111827] hover:border-[#D1D5DB]"
+                        }`}
+                      >
+                        {m.label}
+                      </button>
                     ))}
+                  </div>
+
+                  {/* Chart Content Area */}
+                  <div className="min-h-[280px] flex items-center justify-center">
+                    {isVitalsLoading ? (
+                      <div className="flex items-center gap-2">
+                        <Loader2 className="h-5 w-5 text-[#2563EB] animate-spin" />
+                        <span className="text-sm font-semibold text-[#6B7280]">Loading history...</span>
+                      </div>
+                    ) : vitalsHistory && vitalsHistory.length >= 3 ? (
+                      <div className="w-full">
+                        <TimeSeriesChart data={vitalsHistory} metric={selectedMetric} />
+                      </div>
+                    ) : (
+                      // Fallback Table View
+                      <div className="w-full space-y-3">
+                        <div className="text-center p-4 bg-[#F8FAFC] border border-[#E5E7EB] rounded-2xl max-w-md mx-auto">
+                          <Info className="h-5 w-5 text-[#6B7280] mx-auto mb-2" />
+                          <p className="text-xs font-bold text-[#111827]">Insufficient History for Charting</p>
+                          <p className="text-[11px] text-[#6B7280] mt-1 font-normal">
+                            At least 3 data points are required to plot a trend line. Showing raw records table.
+                          </p>
+                        </div>
+                        
+                        {vitalsHistory && vitalsHistory.length > 0 && (
+                          <div className="overflow-hidden border border-[#E5E7EB] rounded-2xl bg-white">
+                            <table className="w-full text-xs text-left">
+                              <thead className="bg-[#F8FAFC] border-b border-[#E5E7EB] text-[#6B7280] font-bold uppercase tracking-wider">
+                                <tr>
+                                  <th className="px-4 py-2.5">Date & Time</th>
+                                  {selectedMetric === "blood_pressure" ? (
+                                    <>
+                                      <th className="px-4 py-2.5">Systolic (mmHg)</th>
+                                      <th className="px-4 py-2.5">Diastolic (mmHg)</th>
+                                    </>
+                                  ) : (
+                                    <th className="px-4 py-2.5">Value</th>
+                                  )}
+                                  <th className="px-4 py-2.5">Status</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-[#E5E7EB] text-[#111827] font-semibold">
+                                {vitalsHistory.map((item: any, idx: number) => {
+                                  let status = "Normal";
+                                  if (selectedMetric === "heart_rate") {
+                                    status = item.value < 60 || item.value > 100 ? "Out of Range" : "Normal";
+                                  } else if (selectedMetric === "blood_pressure") {
+                                    status = (item.systolic < 90 || item.systolic > 120 || item.diastolic < 60 || item.diastolic > 80) ? "Out of Range" : "Normal";
+                                  } else if (selectedMetric === "body_temperature") {
+                                    status = item.value < 97.0 || item.value > 99.0 ? "Out of Range" : "Normal";
+                                  } else if (selectedMetric === "oxygen") {
+                                    status = item.value < 95 ? "Low" : "Normal";
+                                  } else if (selectedMetric === "bmi") {
+                                    status = item.value < 18.5 || item.value > 24.9 ? "Out of Range" : "Normal";
+                                  }
+                                  
+                                  return (
+                                    <tr key={idx} className="hover:bg-slate-50 transition-colors">
+                                      <td className="px-4 py-2.5 font-normal text-[#6B7280]">
+                                        {new Date(item.timestamp).toLocaleDateString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                                      </td>
+                                      {selectedMetric === "blood_pressure" ? (
+                                        <>
+                                          <td className="px-4 py-2.5">{item.systolic}</td>
+                                          <td className="px-4 py-2.5">{item.diastolic}</td>
+                                        </>
+                                      ) : (
+                                        <td className="px-4 py-2.5">{item.value} {getUnit(selectedMetric)}</td>
+                                      )}
+                                      <td className="px-4 py-2.5">
+                                        <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${
+                                          status === "Normal"
+                                            ? "bg-emerald-50 border border-emerald-200 text-[#16A34A]"
+                                            : "bg-red-50 border border-red-200 text-red-600"
+                                        }`}>
+                                          {status}
+                                        </span>
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
 
-                {/* Recent Lab Reports Section */}
-                <div className="p-4 rounded-2xl border border-[#E5E7EB] bg-white shadow-sm">
-                  <div className="flex items-center justify-between mb-4 border-b border-[#E5E7EB] pb-2">
-                    <div className="flex items-center gap-2">
-                      <FileText className="h-4 w-4 text-[#2563EB]" />
-                      <h3 className="text-sm font-bold text-[#111827]">
-                        Recent Lab Records
-                      </h3>
+                {/* 2. Full-Width Lab History Section */}
+                <div className="p-5 rounded-2xl border border-[#E5E7EB] bg-white shadow-sm space-y-4">
+                  <div className="flex items-center gap-2 border-b border-[#E5E7EB] pb-3">
+                    <FileText className="h-5 w-5 text-[#2563EB]" />
+                    <div>
+                      <h3 className="text-base font-bold text-[#111827]">Recent Lab Records</h3>
+                      <p className="text-xs text-[#6B7280]">Click any lab row to expand and view historical values and progress deltas.</p>
                     </div>
                   </div>
-                  
+
                   <div className="space-y-2">
-                    {[
-                      { test: "CBC Complete Blood Count", date: "10 May 2025", status: "Normal" },
-                      { test: "ESR Erythrocyte Sedimentation Rate", date: "10 May 2025", status: "Normal" },
-                      { test: "Throat Swab Culture", date: "08 May 2025", status: "Normal" },
-                    ].map((lab, i) => (
-                      <div key={i} className="flex items-center justify-between p-2 rounded-xl bg-[#F8FAFC] border border-[#E5E7EB] hover:bg-slate-55 transition-all text-xs">
-                        <div className="min-w-0">
-                          <p className="font-semibold text-[#111827] truncate">{lab.test}</p>
-                          <p className="text-[10px] text-[#6B7280] mt-0.5">{lab.date}</p>
+                    {(trends?.labs || []).map((lab: any, i: number) => {
+                      const cleanName = lab.test.split(" (")[0];
+                      const isExpanded = expandedLab === cleanName;
+
+                      return (
+                        <div key={i} className="border border-[#E5E7EB] rounded-2xl overflow-hidden bg-[#F8FAFC]/50 hover:bg-[#F8FAFC] transition-all">
+                          <button
+                            type="button"
+                            onClick={() => setExpandedLab(isExpanded ? null : cleanName)}
+                            className="w-full flex items-center justify-between p-3.5 text-left text-xs font-semibold cursor-pointer"
+                          >
+                            <div className="flex items-center gap-3">
+                              {isExpanded ? <ChevronDown className="h-4 w-4 text-[#6B7280]" /> : <ChevronRight className="h-4 w-4 text-[#6B7280]" />}
+                              <div className="min-w-0">
+                                <p className="font-bold text-sm text-[#111827] truncate">{lab.test}</p>
+                                <p className="text-[10px] text-[#6B7280] mt-0.5">Latest: {lab.date}</p>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {!isExpanded && (
+                                <span className="text-[10px] text-[#6B7280] italic">Click to view trend</span>
+                              )}
+                              <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase ${
+                                lab.status === "High"
+                                  ? "bg-red-50 border border-red-200 text-red-600"
+                                  : lab.status === "Low"
+                                  ? "bg-blue-50 border border-blue-200 text-blue-600"
+                                  : "bg-emerald-50 border border-emerald-250 text-[#16A34A]"
+                              }`}>
+                                {lab.status}
+                              </span>
+                            </div>
+                          </button>
+
+                          {/* Expanded Lab History Area */}
+                          {isExpanded && (
+                            <div className="p-4 bg-white border-t border-[#E5E7EB] space-y-4">
+                              {isLabHistoryLoading ? (
+                                <div className="flex items-center gap-2 justify-center py-4">
+                                  <Loader2 className="h-4 w-4 text-[#2563EB] animate-spin" />
+                                  <span className="text-xs font-semibold text-[#6B7280]">Loading history...</span>
+                                </div>
+                              ) : (
+                                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+                                  {/* Lab Chart */}
+                                  <div className="space-y-2">
+                                    <div className="flex items-center justify-between">
+                                      <span className="text-xs font-bold text-[#111827]">Trend Chart</span>
+                                      {getDeltaIndicator(labHistory)}
+                                    </div>
+                                    <div className="p-2 border border-[#E5E7EB] rounded-2xl bg-[#F8FAFC]/30">
+                                      <TimeSeriesChart data={labHistory} metric="lab" height={200} />
+                                    </div>
+                                  </div>
+
+                                  {/* Lab History Table */}
+                                  <div className="space-y-2">
+                                    <span className="text-xs font-bold text-[#111827] block">Measurement Logs</span>
+                                    <div className="overflow-hidden border border-[#E5E7EB] rounded-2xl bg-white text-xs">
+                                      <table className="w-full text-left">
+                                        <thead className="bg-[#F8FAFC] border-b border-[#E5E7EB] text-[#6B7280] font-bold uppercase tracking-wider">
+                                          <tr>
+                                            <th className="px-3 py-2">Date & Time</th>
+                                            <th className="px-3 py-2">Value</th>
+                                            <th className="px-3 py-2">Status</th>
+                                          </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-[#E5E7EB] text-[#111827] font-semibold">
+                                          {labHistory.map((h: any, idx: number) => (
+                                            <tr key={idx} className="hover:bg-slate-55 transition-colors">
+                                              <td className="px-3 py-2 font-normal text-[#6B7280]">
+                                                {new Date(h.timestamp).toLocaleDateString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                                              </td>
+                                              <td className="px-3 py-2">{h.display_value}</td>
+                                              <td className="px-3 py-2">
+                                                <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase ${
+                                                  h.status === "High"
+                                                    ? "bg-red-50 border border-red-200 text-red-600"
+                                                    : h.status === "Low"
+                                                    ? "bg-blue-50 border border-blue-200 text-blue-600"
+                                                    : "bg-emerald-50 border border-emerald-250 text-[#16A34A]"
+                                                }`}>
+                                                  {h.status}
+                                                </span>
+                                              </td>
+                                            </tr>
+                                          ))}
+                                        </tbody>
+                                      </table>
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          )}
                         </div>
-                        <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-50 border border-emerald-250 text-[#16A34A] uppercase">
-                          {lab.status}
-                        </span>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
+
               </div>
             )}
           </main>

@@ -4,7 +4,7 @@ import React, { use, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { api } from "@/lib/api";
 import Navbar from "@/components/Navbar";
-import { ArrowLeft, Printer, Download, Eye } from "lucide-react";
+import { ArrowLeft, Printer, Download, Eye, ChevronRight } from "lucide-react";
 
 export default function PrescriptionPreviewPage({ params: paramsPromise }: { params: Promise<{ id: string }> }) {
   const params = use(paramsPromise);
@@ -15,6 +15,20 @@ export default function PrescriptionPreviewPage({ params: paramsPromise }: { par
   
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [printSuccess, setPrintSuccess] = useState(false);
+  const [nextPatientId, setNextPatientId] = useState<string | null>(null);
+
+  useEffect(() => {
+    api.searchPatients("")
+      .then((patients) => {
+        const currentIndex = patients.findIndex((p) => p.id === patientId);
+        if (currentIndex !== -1 && currentIndex + 1 < patients.length) {
+          setNextPatientId(patients[currentIndex + 1].id);
+        }
+      })
+      .catch((err) => {
+        console.error("Failed to load patient queue: ", err);
+      });
+  }, [patientId]);
 
   useEffect(() => {
     if (prescriptionId) {
@@ -58,25 +72,45 @@ export default function PrescriptionPreviewPage({ params: paramsPromise }: { par
             <span>Patient Profile</span>
           </button>
           
-          {pdfUrl && (
-            <div className="flex gap-2">
+          <div className="flex gap-2 items-center">
+            {pdfUrl && (
+              <>
+                <button
+                  onClick={handlePrint}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-bold cursor-pointer"
+                >
+                  <Printer className="h-4 w-4" />
+                  <span>Simulate Print</span>
+                </button>
+                <a
+                  href={pdfUrl}
+                  download={`prescription_${prescriptionId}.pdf`}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-sky-600 hover:bg-sky-500 text-white rounded-lg text-xs font-bold cursor-pointer"
+                >
+                  <Download className="h-4 w-4" />
+                  <span>Download PDF</span>
+                </a>
+              </>
+            )}
+
+            {nextPatientId ? (
               <button
-                onClick={handlePrint}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-bold cursor-pointer"
+                onClick={() => window.location.href = `/patient/${nextPatientId}`}
+                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold cursor-pointer active:scale-95 transition-all shadow-sm"
               >
-                <Printer className="h-4 w-4" />
-                <span>Simulate Print</span>
+                <span>Next Patient</span>
+                <ChevronRight className="h-4 w-4" />
               </button>
-              <a
-                href={pdfUrl}
-                download={`prescription_${prescriptionId}.pdf`}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-sky-600 hover:bg-sky-500 text-white rounded-lg text-xs font-bold cursor-pointer"
+            ) : (
+              <button
+                onClick={() => window.location.href = "/doctor"}
+                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-slate-500 hover:bg-slate-600 text-white rounded-lg text-xs font-bold cursor-pointer active:scale-95 transition-all shadow-sm"
               >
-                <Download className="h-4 w-4" />
-                <span>Download PDF</span>
-              </a>
-            </div>
-          )}
+                <span>Doctor Queue</span>
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            )}
+          </div>
         </div>
 
         {/* PDF viewer frame */}

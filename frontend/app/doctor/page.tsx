@@ -1,15 +1,30 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import DashboardLayout from "@/components/DashboardLayout";
-import { Search, User, Clipboard, Play, CheckCircle2, History, ChevronRight, Loader2, Users, Clock, Sparkles, ClipboardList } from "lucide-react";
+import { Search, User, Clipboard, Play, CheckCircle2, History, ChevronRight, Loader2, Users, Clock, Sparkles, ClipboardList, Trash2 } from "lucide-react";
 
 export default function DoctorDashboard() {
   const [searchQuery, setSearchQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [selectedPatientId, setSelectedPatientId] = useState<string | null>(null);
+  
+  const queryClient = useQueryClient();
+
+  const handleDeletePatient = async (id: string) => {
+    if (confirm("Are you sure you want to permanently delete this patient record and all their consultation files? This action cannot be undone.")) {
+      try {
+        await api.deletePatient(id);
+        alert("Patient record deleted successfully.");
+        setSelectedPatientId(null);
+        queryClient.invalidateQueries({ queryKey: ["patients"] });
+      } catch (err: any) {
+        alert("Failed to delete patient: " + err.message);
+      }
+    }
+  };
   
   // Custom shake state
   const [shouldShake, setShouldShake] = useState(false);
@@ -167,6 +182,14 @@ export default function DoctorDashboard() {
                 >
                   <History className="h-4 w-4 text-[#2563EB]" />
                   <span>View Clinical History</span>
+                </button>
+
+                <button
+                  onClick={() => handleDeletePatient(selectedPatient.id)}
+                  className="inline-flex items-center justify-center gap-1.5 px-4 py-3 bg-white border border-red-200 text-red-600 hover:bg-red-50 hover:border-red-300 rounded-xl text-xs font-bold cursor-pointer transition-all active:scale-95 shadow-sm"
+                >
+                  <Trash2 className="h-4 w-4 text-red-600" />
+                  <span>Delete Patient</span>
                 </button>
               </div>
             </div>

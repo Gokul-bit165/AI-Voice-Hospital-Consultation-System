@@ -25,6 +25,58 @@ class PrescriptionCreateRequest(BaseModel):
     audio_base64: Optional[str] = None # For dictating prescription via voice
     transcript: Optional[str] = None # Direct text dictation fallback (e.g. mobile)
 
+def check_and_set_allergy_warnings(medicines_list: List[dict], patient_allergies: Optional[List[str]]) -> List[dict]:
+    if not patient_allergies:
+        return medicines_list
+        
+    allergy_map = {
+        "penicillin": ["amoxicillin", "penicillin", "ampicillin", "clavulanate", "piperacillin", "cefadroxil", "cephalexin"],
+        "sulfa": ["sulfamethoxazole", "co-trimoxazole", "dapsone", "sulfasalazine"],
+        "aspirin": ["aspirin", "ibuprofen", "diclofenac", "naproxen"]
+    }
+    
+    updated_list = []
+    for med in medicines_list:
+        name = str(med.get("name") or "").strip()
+        name_lower = name.lower()
+        if not name:
+            updated_list.append(med)
+            continue
+            
+        warns = med.get("warnings") or ""
+        has_conflict = False
+        conflict_allergy = ""
+        
+        for allergy in patient_allergies:
+            allergy_lower = allergy.lower()
+            if allergy_lower in name_lower or name_lower in allergy_lower:
+                has_conflict = True
+                conflict_allergy = allergy
+                break
+                
+            for allergy_class, drugs in allergy_map.items():
+                if allergy_class in allergy_lower:
+                    if any(d in name_lower for d in drugs):
+                        has_conflict = True
+                        conflict_allergy = allergy
+                        break
+            if has_conflict:
+                break
+                
+        if has_conflict:
+            warn_str = f"🚨 Allergy Warning: conflicts with recorded allergy to {conflict_allergy}"
+            if warn_str not in warns:
+                med["warnings"] = (warns + " " + warn_str).strip()
+        else:
+            warn_prefix = "🚨 Allergy Warning: conflicts with recorded allergy to"
+            if warn_prefix in warns:
+                parts = warns.split(warn_prefix)
+                before = parts[0].strip()
+                med["warnings"] = before if before else None
+                
+        updated_list.append(med)
+    return updated_list
+
 @router.post("/visits/{visit_id}/prescription", response_model=PrescriptionResponse)
 async def create_prescription(
     visit_id: str,
@@ -32,11 +84,12 @@ async def create_prescription(
     db: AsyncSession = Depends(get_db_session),
     current_user: Doctor = Depends(require_doctor)
 ):
-    # Fetch visit
+    # Fetch visit with row level locking
     result = await db.execute(
         select(Visit)
         .filter(Visit.id == visit_id)
         .options(selectinload(Visit.prescription))
+        .with_for_update()
     )
     visit = result.scalars().first()
     if not visit:
@@ -94,6 +147,41 @@ async def create_prescription(
     else:
         raise HTTPException(status_code=400, detail="Must provide either medicines list or audio dictation")
 
+    db_prescription = visit.prescription
+
+    # Cumulative dictation parsing: append new extractions to existing prescription list
+    if db_prescription and (req.transcript or req.audio_base64):
+        existing_meds = db_prescription.medicines or []
+        accumulated_meds = [dict(m) for m in existing_meds]
+        
+        for new_med in medicines_list:
+            new_name = str(new_med.get("name") or "").strip().lower()
+            if not new_name:
+                continue
+                
+            match_found = False
+            for idx, existing in enumerate(accumulated_meds):
+                existing_name = str(existing.get("name") or "").strip().lower()
+                if existing_name == new_name:
+                    # Update properties in-place (merge rather than duplicate)
+                    accumulated_meds[idx]["strength"] = new_med.get("strength") or existing.get("strength")
+                    accumulated_meds[idx]["dosage"] = new_med.get("dosage") or existing.get("dosage")
+                    accumulated_meds[idx]["frequency"] = new_med.get("frequency") or existing.get("frequency")
+                    accumulated_meds[idx]["duration"] = new_med.get("duration") or existing.get("duration")
+                    accumulated_meds[idx]["instructions"] = new_med.get("instructions") or existing.get("instructions")
+                    if new_med.get("warnings"):
+                        accumulated_meds[idx]["warnings"] = new_med.get("warnings")
+                    match_found = True
+                    break
+                    
+            if not match_found:
+                accumulated_meds.append(new_med)
+                
+        medicines_list = accumulated_meds
+
+    # Run allergy check and set warning flags
+    medicines_list = check_and_set_allergy_warnings(medicines_list, patient.allergies)
+
     # Generate Prescription PDF
     pdf_rel_path = prescription_service.generate_prescription_pdf(
         patient_id=visit.patient_id,
@@ -104,7 +192,6 @@ async def create_prescription(
         visit_date=visit.visit_date.strftime("%Y-%m-%d")
     )
 
-    db_prescription = visit.prescription
     if db_prescription:
         # Update existing
         db_prescription.medicines = medicines_list
